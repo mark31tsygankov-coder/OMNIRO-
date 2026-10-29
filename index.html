@@ -9,16 +9,20 @@
     :root {
       --bg-color: #000000;
       --card-bg: #0c0c0c;
-      --border-color: #262626;
+      --card-hover: #141414;
+      --border-color: #222222;
+      --border-active: #ffffff;
       --text-main: #ffffff;
-      --text-muted: #888888;
+      --text-muted: #777777;
       --accent: #ffffff;
-      --radius: 16px;
+      --radius: 18px;
+      --radius-sm: 12px;
     }
 
     * {
       box-sizing: border-box;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
     }
 
     body {
@@ -34,15 +38,16 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 14px;
-      padding-bottom: 30px;
+      gap: 16px;
+      padding-bottom: 40px;
     }
 
+    /* Шапка */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 16px;
+      padding: 16px 20px;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: var(--radius);
@@ -51,7 +56,7 @@
     .brand-title {
       font-size: 16px;
       font-weight: 800;
-      letter-spacing: 0.8px;
+      letter-spacing: 1px;
       text-transform: uppercase;
     }
 
@@ -59,20 +64,22 @@
       font-size: 11px;
       color: var(--text-muted);
       background: #141414;
-      padding: 4px 8px;
-      border-radius: 8px;
+      padding: 6px 10px;
+      border-radius: 10px;
       border: 1px solid var(--border-color);
+      font-family: monospace;
     }
 
+    /* Карточки */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 20px;
     }
 
     .welcome-title {
-      font-size: 17px;
+      font-size: 18px;
       font-weight: 700;
       margin-bottom: 4px;
     }
@@ -80,70 +87,103 @@
     .welcome-sub {
       font-size: 12px;
       color: var(--text-muted);
+      line-height: 1.4;
     }
 
-    .stats-grid {
+    /* Переключатель режимов (Себе / Подарок) */
+    .mode-switch {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 12px;
-    }
-
-    .stat-box {
       background: #050505;
       border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 12px;
+      border-radius: var(--radius-sm);
+      padding: 4px;
+      margin-top: 14px;
     }
 
-    .stat-label {
-      font-size: 10px;
-      text-transform: uppercase;
+    .mode-btn {
+      background: transparent;
+      border: none;
       color: var(--text-muted);
-      letter-spacing: 0.5px;
-    }
-
-    .stat-value {
-      font-size: 15px;
-      font-weight: 700;
-      margin-top: 4px;
-      color: var(--accent);
-    }
-
-    .section-title {
       font-size: 12px;
+      font-weight: 700;
+      padding: 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .mode-btn.active {
+      background: #ffffff;
+      color: #000000;
+    }
+
+    /* Поле ввода ID для подарка */
+    .gift-box {
+      display: none;
+      margin-top: 12px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    input {
+      width: 100%;
+      background: #050505;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      color: #ffffff;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus {
+      border-color: var(--border-active);
+    }
+
+    /* Заголовки разделов */
+    .section-title {
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.8px;
       color: var(--text-muted);
       margin: 4px 0 2px 4px;
+      font-weight: 700;
     }
 
+    /* Тарифы сетка */
     .btn-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 8px;
+      gap: 10px;
     }
 
     .btn-plan {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: var(--radius);
-      padding: 14px 8px;
+      padding: 16px 10px;
       text-align: center;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
     }
 
-    .btn-plan:active, .btn-plan.selected {
+    .btn-plan:hover {
+      background: var(--card-hover);
+    }
+
+    .btn-plan.selected {
       background: #ffffff;
       color: #000000;
       border-color: #ffffff;
+      transform: translateY(-2px);
     }
-    .btn-plan:active .plan-price, .btn-plan.selected .plan-price {
+
+    .btn-plan.selected .plan-price {
       color: #000000;
     }
-    .btn-plan:active .plan-name, .btn-plan.selected .plan-name {
-      color: #444444;
+
+    .btn-plan.selected .plan-name {
+      color: #555555;
     }
 
     .plan-name {
@@ -153,24 +193,25 @@
     }
 
     .plan-price {
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 800;
       margin-top: 6px;
       color: var(--accent);
     }
 
+    /* Главные закругленные кнопки */
     .btn {
       width: 100%;
-      padding: 15px;
+      padding: 16px;
       border-radius: var(--radius);
       border: none;
       background-color: #ffffff;
       color: #000000;
-      font-weight: 700;
+      font-weight: 800;
       font-size: 13px;
       cursor: pointer;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -184,55 +225,74 @@
     }
 
     .btn-outline {
-      background-color: transparent;
+      background-color: var(--card-bg);
       color: var(--accent);
       border: 1px solid var(--border-color);
+    }
+    .btn-outline:hover {
+      background-color: var(--card-hover);
+      border-color: #444;
     }
 
     .menu-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      gap: 10px;
     }
 
+    /* Экран ключа и результатов */
     .result-box {
       display: flex;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 20px;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
+      animation: fadeIn 0.3s ease;
     }
 
     .link-field {
-      background: #000000;
+      background: #050505;
       border: 1px dashed var(--border-color);
-      padding: 12px;
-      border-radius: 12px;
+      padding: 14px;
+      border-radius: var(--radius-sm);
       word-break: break-all;
       font-family: monospace;
       font-size: 11px;
       color: var(--text-muted);
+      max-height: 90px;
+      overflow-y: auto;
     }
 
     .qr-container {
       text-align: center;
-      padding: 10px;
+      padding: 14px;
       background: #ffffff;
-      border-radius: 12px;
+      border-radius: var(--radius-sm);
       display: inline-block;
       margin: 0 auto;
+      box-shadow: 0 4px 20px rgba(255,255,255,0.05);
     }
     .qr-container img {
-      width: 140px;
-      height: 140px;
+      width: 150px;
+      height: 150px;
       display: block;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
 <body>
 
+  <!-- ГЛАВНЫЙ ЭКРАН -->
   <div class="container" id="main-view">
     <div class="header">
       <div class="brand-title">OMNIRO VPN</div>
@@ -240,24 +300,24 @@
     </div>
 
     <div class="card">
-      <div class="welcome-title">Добро пожаловать! 👋</div>
-      <div class="welcome-sub">Быстрый, безопасный и анонимный VPN без ограничений.</div>
+      <div class="welcome-title">Быстрый доступ ⚡️</div>
+      <div class="welcome-sub">Выберите тариф и оформите подписку за пару кликов.</div>
       
-      <div class="stats-grid">
-        <div class="stat-box">
-          <div class="stat-label">Баланс</div>
-          <div class="stat-value" id="user-balance">0 ₽</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-label">Статус</div>
-          <div class="stat-value" id="user-sub-status">Активен</div>
-        </div>
+      <!-- Переключатель Себе / Подарок -->
+      <div class="mode-switch">
+        <button class="mode-btn active" id="mode-self" onclick="setMode('self')">Себе</button>
+        <button class="mode-btn" id="mode-gift" onclick="setMode('gift')">🎁 Подарить другу</button>
+      </div>
+
+      <!-- Поле ввода ID друга -->
+      <div class="gift-box" id="gift-input-box">
+        <input type="number" id="gift-target-id" placeholder="Введите Telegram ID друга (например: 123456789)">
       </div>
     </div>
 
     <div class="section-title">Тарифные планы</div>
     <div class="btn-grid">
-      <div class="btn-plan" onclick="selectPlan('m1', 79, this)">
+      <div class="btn-plan selected" onclick="selectPlan('m1', 79, this)">
         <div class="plan-name">1 Месяц</div>
         <div class="plan-price">79 ₽</div>
       </div>
@@ -271,9 +331,9 @@
       </div>
     </div>
 
-    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">💳 Оплатить</button>
+    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">💳 Оплатить 79 ₽</button>
 
-    <div class="section-title">Меню управления</div>
+    <div class="section-title">Управление</div>
     <div class="menu-grid">
       <button class="btn btn-outline" onclick="openMySubs()">📦 Мои подписки</button>
       <button class="btn btn-outline" onclick="openPromos()">🎟 Промокоды</button>
@@ -282,14 +342,15 @@
     </div>
   </div>
 
-  <div class="container" id="result-view" style="display: none;">
+  <!-- ЭКРАН ВЫДАЧИ КЛЮЧА И QR -->
+  <div class="container hidden" id="result-view">
     <div class="header">
       <div class="brand-title">Ваш VPN Ключ</div>
       <div class="user-badge" onclick="backToMain()" style="cursor: pointer;">✕ Закрыть</div>
     </div>
 
     <div class="result-box">
-      <div class="welcome-sub">Оплата прошла успешно! Скопируйте ключ или отсканируйте QR-код.</div>
+      <div class="welcome-sub" id="result-desc">Подписка успешно активирована! Отсканируйте QR-код или скопируйте ключ ниже.</div>
       
       <div class="qr-container">
         <img id="qr-img" src="" alt="QR Code">
@@ -309,11 +370,34 @@
 
     let selectedPlanKey = 'm1';
     let selectedPrice = 79;
+    let purchaseMode = 'self'; // 'self' или 'gift'
     let activeVpnLink = '';
 
     const user = tg.initDataUnsafe?.user;
     if (user) {
       document.getElementById('user-id-badge').innerText = `ID: ${user.id}`;
+    }
+
+    function setMode(mode) {
+      purchaseMode = mode;
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      
+      const selfBtn = document.getElementById('mode-self');
+      const giftBtn = document.getElementById('mode-gift');
+      const giftBox = document.getElementById('gift-input-box');
+      const payBtn = document.getElementById('pay-btn');
+
+      if (mode === 'self') {
+        selfBtn.classList.add('active');
+        giftBtn.classList.remove('active');
+        giftBox.classList.add('hidden');
+        payBtn.innerText = `💳 Оплатить ${selectedPrice} ₽`;
+      } else {
+        giftBtn.classList.add('active');
+        selfBtn.classList.remove('active');
+        giftBox.classList.remove('hidden');
+        payBtn.innerText = `🎁 Оплатить подарок (${selectedPrice} ₽)`;
+      }
     }
 
     function selectPlan(key, price, element) {
@@ -323,14 +407,35 @@
       
       document.querySelectorAll('.btn-plan').forEach(el => el.classList.remove('selected'));
       element.classList.add('selected');
-      document.getElementById('pay-btn').innerText = `💳 Оплатить ${price} ₽`;
-    }
 
-    document.querySelector('.btn-plan').classList.add('selected');
+      const payBtn = document.getElementById('pay-btn');
+      if (purchaseMode === 'self') {
+        payBtn.innerText = `💳 Оплатить ${price} ₽`;
+      } else {
+        payBtn.innerText = `🎁 Оплатить подарок (${price} ₽)`;
+      }
+    }
 
     function proceedToPay() {
       if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-      tg.sendData(JSON.stringify({ action: 'buy_plan', plan: selectedPlanKey, price: selectedPrice }));
+
+      let targetId = null;
+      if (purchaseMode === 'gift') {
+        targetId = document.getElementById('gift-target-id').value.trim();
+        if (!targetId) {
+          tg.showAlert("Пожалуйста, введите Telegram ID друга для подарка!");
+          return;
+        }
+      }
+
+      // Передаем данные боту
+      tg.sendData(JSON.stringify({ 
+        action: 'buy_plan', 
+        plan: selectedPlanKey, 
+        price: selectedPrice,
+        mode: purchaseMode,
+        target_id: targetId 
+      }));
     }
 
     function openMySubs() {
@@ -349,18 +454,24 @@
       tg.sendData(JSON.stringify({ action: 'open_support' }));
     }
 
-    function showSuccessKey(link) {
+    // Функция для программного отображения экрана успешного получения ключа
+    function showSuccessKey(link, descText = '') {
       activeVpnLink = link;
-      document.getElementById('main-view').style.display = 'none';
-      document.getElementById('result-view').style.display = 'flex';
+      document.getElementById('main-view').classList.add('hidden');
+      document.getElementById('result-view').classList.remove('hidden');
       document.getElementById('vpn-link-text').innerText = link;
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link)}`;
+      
+      if (descText) {
+        document.getElementById('result-desc').innerText = descText;
+      }
+
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(link)}`;
       document.getElementById('qr-img').src = qrUrl;
     }
 
     function backToMain() {
-      document.getElementById('result-view').style.display = 'none';
-      document.getElementById('main-view').style.display = 'flex';
+      document.getElementById('result-view').classList.add('hidden');
+      document.getElementById('main-view').classList.remove('hidden');
     }
 
     function copyKey() {
