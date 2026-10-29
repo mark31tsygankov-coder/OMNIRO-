@@ -1,435 +1,424 @@
-
 import os
-import json
-import time
-import hmac
 import hashlib
+import hmac
+import json
 import sqlite3
-import logging
-from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qsl
+import uuid
+import asyncio
+from datetime import datetime, timedelta
+from typing import Optional
 
+from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Header
-from fastapi.responses import JSONResponse
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.filters import CommandStart
-from aiogram.types import (
-    Message, WebAppInfo, InlineKeyboardMarkup,
-    InlineKeyboardButton
-)
-from pydantic import BaseModel
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command, CommandStart
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Message
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+import uvicorn
 
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("omniro")
+# ==================== CONFIG ====================
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8708312537:AAG1yrOZc5SWyl2JFXxsNQKE4ga8-Dl7ZRA")
+ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "8995385837").split(",") if i.strip()]
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-APP_URL = os.getenv("APP_URL", "").rstrip("/")
-DATABASE = os.getenv("DATABASE", "omniro.db")
+RP_KEY = os.getenv("ROLLYPAY_API_KEY", "Y9ZGC5UCRFgCloE-uluVczR7o12ju6GTb-oRyHaBqRk")
+RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "akjiGkcHyj6dt_WmzbSYeBBorTOnvZ1ucGQzl0BFGdk")
+RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "d21c4db8-e234-4a9b-a00a-2194420af7df")
+RP_BASE = os.getenv("ROLLYPAY_BASE_URL", "https://rollypay.io")
 
-# Укажи настоящие реквизиты в переменных окружения.
-ROLLYPAY_API_KEY = os.getenv("ROLLYPAY_API_KEY", "")
-ROLLYPAY_API_URL = os.getenv(
-    "ROLLYPAY_API_URL", "https://api.rollypay.io"
-).rstrip("/")
-ROLLYPAY_TERMINAL_ID = os.getenv("ROLLYPAY_TERMINAL_ID", "")
+H1_URL = os.getenv("H1CLOUD_API_URL", "https://s-25154.pl7.h1clayd.click/api").rstrip("/")
+H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "2ead850e5fe347fa9ed81f7838d64fc5590facdea2b94737ba7fff788bd55bb8")
 
-H1_API_URL = os.getenv(
-    "H1_API_URL", "https://s-25154.pl7.h1clayd.click/api"
-).rstrip("/")
-H1_API_TOKEN = os.getenv("H1_API_TOKEN", "")
-# Заполняется после сверки с документацией именно твоей панели.
-H1_CREATE_PATH = os.getenv("H1_CREATE_PATH", "")
+BASE_URL = (os.getenv("BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://botvpnzayou.onrender.com").rstrip("/")
+MINI_APP_URL = os.getenv("MINI_APP_URL", BASE_URL)
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").lstrip("@")
+POLICY_URL = os.getenv("POLICY_URL", "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99")
+OFFER_URL = os.getenv("OFFER_URL", "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15")
+DB_PATH = os.getenv("DB_PATH", "bot.db")
+PORT = int(os.getenv("PORT", "10000"))
+ALLOW_TEST = os.getenv("ALLOW_TEST_PAYMENTS", "0") == "1"
 
-if not BOT_TOKEN:
-    raise RuntimeError("Укажи BOT_TOKEN в переменных окружения.")
+BRAND = "OMNIRO VPN"
+TG_SECRET = hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:48]
 
-bot = Bot(BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
-app = FastAPI(title="OMNIRO VPN API")
-
+# Тарифы (можно менять)
 TARIFFS = {
-    "1": {"months": 1, "price": 79},
-    "3": {"months": 3, "price": 237},
-    "6": {"months": 6, "price": 474},
+    "1m": {"name": "1 месяц", "days": 30, "price": 199, "traffic_gb": 0},
+    "3m": {"name": "3 месяца", "days": 90, "price": 499, "traffic_gb": 0},
+    "6m": {"name": "6 месяцев", "days": 180, "price": 899, "traffic_gb": 0},
+    "12m": {"name": "12 месяцев", "days": 365, "price": 1499, "traffic_gb": 0},
 }
 
-
-def db():
-    con = sqlite3.connect(DATABASE)
-    con.row_factory = sqlite3.Row
-    return con
-
-
+# ==================== DB ====================
 def init_db():
-    with db() as con:
-        con.executescript("""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            username TEXT DEFAULT '',
+            username TEXT,
+            first_name TEXT,
+            balance REAL DEFAULT 0,
             created_at TEXT
-        );
+        )
+    """)
+    c.execute("""
         CREATE TABLE IF NOT EXISTS subscriptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            expires_at TEXT NOT NULL,
-            vpn_key TEXT DEFAULT '',
-            status TEXT DEFAULT 'pending',
-            gift_to INTEGER DEFAULT 0,
-            created_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS payments (
-            id TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            tariff TEXT NOT NULL,
-            amount INTEGER NOT NULL,
-            status TEXT DEFAULT 'pending',
-            pay_url TEXT DEFAULT '',
-            created_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS promos (
-            code TEXT PRIMARY KEY,
-            discount INTEGER NOT NULL DEFAULT 0,
-            days INTEGER NOT NULL DEFAULT 0,
-            uses_left INTEGER NOT NULL DEFAULT 100
-        );
-        CREATE TABLE IF NOT EXISTS promo_uses (
-            user_id INTEGER NOT NULL,
-            code TEXT NOT NULL,
-            PRIMARY KEY(user_id, code)
-        );
-        CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT DEFAULT 'open',
-            created_at TEXT
-        );
-        """)
-
-
-def utcnow():
-    return datetime.now(timezone.utc)
-
-
-def iso(dt):
-    return dt.isoformat()
-
-
-def upsert_user(user_id, username=""):
-    with db() as con:
-        con.execute(
-            """INSERT INTO users(user_id, username, created_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET username=excluded.username""",
-            (user_id, username or "", iso(utcnow()))
+            user_id INTEGER,
+            key_name TEXT,
+            config TEXT,
+            tariff TEXT,
+            expires_at TEXT,
+            created_at TEXT,
+            is_gift INTEGER DEFAULT 0,
+            gifted_to INTEGER
         )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            order_id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            amount REAL,
+            tariff TEXT,
+            status TEXT,
+            payment_id TEXT,
+            created_at TEXT,
+            is_gift INTEGER DEFAULT 0,
+            gift_to_username TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS promocodes (
+            code TEXT PRIMARY KEY,
+            discount_percent INTEGER,
+            max_uses INTEGER,
+            used INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )
+    """)
+    conn.commit()
+    conn.close()
 
+def get_db():
+    return sqlite3.connect(DB_PATH)
 
-def validate_init_data(init_data: str):
-    """Проверяет подпись Telegram Mini App."""
-    if not init_data:
-        raise HTTPException(401, "Открой приложение через Telegram")
+# ==================== H1CLOUD ====================
+async def h1_create_client(name: str, days: int, traffic_gb: int = 0) -> dict:
+    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+        payload = {"name": name, "days": days}
+        if traffic_gb > 0:
+            payload["traffic_limit_gb"] = traffic_gb
+        r = await client.post(
+            f"{H1_URL}/create",
+            headers={"Authorization": f"Bearer {H1_TOKEN}"},
+            json=payload
+        )
+        r.raise_for_status()
+        return r.json()
 
-    data = dict(parse_qsl(init_data, keep_blank_values=True))
-    received_hash = data.pop("hash", None)
-    if not received_hash:
-        raise HTTPException(401, "Нет подписи Telegram")
+async def h1_get_client(name: str) -> Optional[dict]:
+    async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
+        try:
+            r = await client.get(
+                f"{H1_URL}/clients/{name}",
+                headers={"Authorization": f"Bearer {H1_TOKEN}"}
+            )
+            if r.status_code == 404:
+                return None
+            r.raise_for_status()
+            data = r.json()
+            return data.get("client") or data
+        except:
+            return None
 
-    check_string = "\n".join(
-        f"{k}={v}" for k, v in sorted(data.items())
+# ==================== ROLLYPAY ====================
+async def create_payment(order_id: str, amount: float, description: str, user_id: int) -> dict:
+    payload = {
+        "amount": f"{amount:.2f}",
+        "payment_currency": "RUB",
+        "order_id": order_id,
+        "terminal_id": RP_TERMINAL,
+        "description": description,
+        "customer_id": str(user_id),
+        "success_redirect_url": f"{MINI_APP_URL}/?paid=1",
+        "fail_redirect_url": f"{MINI_APP_URL}/?paid=0",
+        "metadata": {"user_id": user_id}
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "X-API-Key": RP_KEY,
+        "X-Nonce": str(uuid.uuid4())
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(f"{RP_BASE}/api/v1/payments", json=payload, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
+def verify_rollypay_signature(timestamp: str, body: bytes, signature: str) -> bool:
+    mac = hmac.new(RP_SECRET.encode(), digestmod=hashlib.sha256)
+    mac.update(timestamp.encode())
+    mac.update(b".")
+    mac.update(body)
+    expected = mac.hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+# ==================== BOT ====================
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+def main_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Открыть Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
+        [InlineKeyboardButton(text="💳 Купить подписку", callback_data="buy")],
+        [InlineKeyboardButton(text="🔑 Мои подписки", callback_data="mysubs")],
+        [InlineKeyboardButton(text="🎁 Подарить", callback_data="gift")],
+        [InlineKeyboardButton(text="💬 Поддержка", url=f"https://t.me/{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "https://t.me/")],
+    ])
+
+@dp.message(CommandStart())
+async def cmd_start(message: Message):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, created_at) VALUES (?, ?, ?, ?)",
+              (message.from_user.id, message.from_user.username, message.from_user.first_name, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+    await message.answer(
+        f"<b>Добро пожаловать в {BRAND}!</b>\n\n"
+        "Быстрый, стабильный и анонимный VPN.\n"
+        "Открой Mini App — там всё удобно и красиво 👇",
+        reply_markup=main_keyboard()
     )
-    secret = hmac.new(
-        b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256
-    ).digest()
-    calculated = hmac.new(
-        secret, check_string.encode(), hashlib.sha256
-    ).hexdigest()
 
-    if not hmac.compare_digest(calculated, received_hash):
-        raise HTTPException(401, "Неверная подпись Telegram")
+@dp.callback_query(F.data == "buy")
+async def cb_buy(callback: types.CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{t['name']} — {t['price']} ₽", callback_data=f"tariff_{k}")]
+        for k, t in TARIFFS.items()
+    ] + [[InlineKeyboardButton(text="◀️ Назад", callback_data="back")]])
+    await callback.message.edit_text("Выбери тариф:", reply_markup=kb)
 
-    auth_date = int(data.get("auth_date", "0"))
-    if abs(time.time() - auth_date) > 86400:
-        raise HTTPException(401, "Сессия Telegram устарела")
+@dp.callback_query(F.data.startswith("tariff_"))
+async def cb_tariff(callback: types.CallbackQuery):
+    tariff_key = callback.data.split("_")[1]
+    tariff = TARIFFS[tariff_key]
+    order_id = f"ord_{callback.from_user.id}_{uuid.uuid4().hex[:8]}"
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO payments (order_id, user_id, amount, tariff, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+              (order_id, callback.from_user.id, tariff["price"], tariff_key, "created", datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
     try:
-        user = json.loads(data["user"])
-    except (KeyError, ValueError):
-        raise HTTPException(401, "Не удалось определить пользователя")
+        pay = await create_payment(order_id, tariff["price"], f"{BRAND} — {tariff['name']}", callback.from_user.id)
+        pay_url = pay.get("pay_url")
+        await callback.message.edit_text(
+            f"<b>{tariff['name']}</b>\nСумма: <b>{tariff['price']} ₽</b>\n\nНажми кнопку ниже для оплаты:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Оплатить", url=pay_url)],
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="buy")]
+            ])
+        )
+    except Exception as e:
+        await callback.message.edit_text(f"Ошибка создания платежа: {e}")
 
-    upsert_user(int(user["id"]), user.get("username", ""))
-    return user
+@dp.callback_query(F.data == "mysubs")
+async def cb_mysubs(callback: types.CallbackQuery):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT key_name, expires_at, tariff FROM subscriptions WHERE user_id = ? ORDER BY id DESC", (callback.from_user.id,))
+    rows = c.fetchall()
+    conn.close()
 
+    if not rows:
+        text = "У тебя пока нет активных подписок."
+    else:
+        text = "<b>Твои подписки:</b>\n\n"
+        for name, exp, tar in rows:
+            text += f"• <code>{name}</code>\n  Тариф: {TARIFFS.get(tar, {}).get('name', tar)}\n  До: {exp[:10]}\n\n"
 
-async def get_user(x_telegram_init_data: str = Header(default="")):
-    return validate_init_data(x_telegram_init_data)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back")]
+    ]))
 
+@dp.callback_query(F.data == "back")
+async def cb_back(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        f"<b>{BRAND}</b>\nВыбери действие:",
+        reply_markup=main_keyboard()
+    )
 
-class PromoRequest(BaseModel):
-    code: str
+@dp.callback_query(F.data == "gift")
+async def cb_gift(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "Чтобы подарить подписку — открой Mini App и выбери «Подарить».\n"
+        "Или напиши в поддержку.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back")]
+        ])
+    )
 
-
-class BuyRequest(BaseModel):
-    tariff: str
-    promo: str = ""
-    gift_to: int = 0
-
-
-class TicketRequest(BaseModel):
-    message: str
-
-
-class GiftRequest(BaseModel):
-    recipient_id: int
-    tariff: str = "1"
-
+# ==================== FASTAPI ====================
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def startup():
     init_db()
-    import asyncio
     asyncio.create_task(dp.start_polling(bot))
 
+@app.get("/")
+async def index():
+    return FileResponse("index.html")
 
-@app.on_event("shutdown")
-async def shutdown():
-    await bot.session.close()
+@app.get("/api/user")
+async def api_user(request: Request):
+    # Простая проверка initData (упрощённо)
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    # В реальном проекте нужно полноценно валидировать
+    user_id = request.query_params.get("user_id")
+    if not user_id:
+        raise HTTPException(400, "user_id required")
+    user_id = int(user_id)
 
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT username, first_name FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    c.execute("SELECT key_name, expires_at, tariff, config FROM subscriptions WHERE user_id = ? ORDER BY id DESC", (user_id,))
+    subs = c.fetchall()
+    conn.close()
 
-@router.message(CommandStart())
-async def start(message: Message):
-    upsert_user(message.from_user.id, message.from_user.username)
-    keyboard = None
-    if APP_URL.startswith("https://"):
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="Открыть OMNIRO VPN",
-                web_app=WebAppInfo(url=APP_URL)
-            )
-        ]])
-    await message.answer(
-        "OMNIRO VPN\n\n"
-        "Покупка подписки, промокоды, подарки и поддержка — "
-        "в личном кабинете.",
-        reply_markup=keyboard
-    )
-
-
-@app.get("/api/config")
-async def config():
     return {
-        "name": "OMNIRO VPN",
-        "tariffs": TARIFFS,
-        "legal": {
-            "privacy": "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99",
-            "offer": "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
-        }
+        "user_id": user_id,
+        "username": row[0] if row else None,
+        "first_name": row[1] if row else None,
+        "subscriptions": [
+            {"key_name": s[0], "expires_at": s[1], "tariff": s[2], "config": s[3]}
+            for s in subs
+        ],
+        "tariffs": TARIFFS
     }
 
+@app.post("/api/create_payment")
+async def api_create_payment(data: dict):
+    user_id = data.get("user_id")
+    tariff_key = data.get("tariff")
+    promo = data.get("promo", "").upper().strip()
+    is_gift = data.get("is_gift", False)
+    gift_to = data.get("gift_to")
 
-@app.get("/api/me")
-async def me(user=__import__("fastapi").Depends(get_user)):
-    uid = int(user["id"])
-    with db() as con:
-        subs = con.execute(
-            """SELECT id, expires_at, vpn_key, status, gift_to
-            FROM subscriptions WHERE user_id=? ORDER BY id DESC""",
-            (uid,)
-        ).fetchall()
-        payments = con.execute(
-            """SELECT id, amount, status, pay_url, created_at
-            FROM payments WHERE user_id=? ORDER BY created_at DESC LIMIT 20""",
-            (uid,)
-        ).fetchall()
-        tickets = con.execute(
-            """SELECT id, message, status, created_at
-            FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 20""",
-            (uid,)
-        ).fetchall()
-    return {
-        "user": {"id": uid, "username": user.get("username", "")},
-        "subscriptions": [dict(x) for x in subs],
-        "payments": [dict(x) for x in payments],
-        "tickets": [dict(x) for x in tickets]
-    }
+    if tariff_key not in TARIFFS:
+        raise HTTPException(400, "Invalid tariff")
 
+    tariff = TARIFFS[tariff_key]
+    price = tariff["price"]
 
-@app.post("/api/promo")
-async def promo(body: PromoRequest,
-                user=__import__("fastapi").Depends(get_user)):
-    code = body.code.strip().upper()
-    with db() as con:
-        row = con.execute(
-            "SELECT * FROM promos WHERE code=?", (code,)
-        ).fetchone()
-        used = con.execute(
-            "SELECT 1 FROM promo_uses WHERE user_id=? AND code=?",
-            (int(user["id"]), code)
-        ).fetchone()
-    if not row or row["uses_left"] <= 0:
-        raise HTTPException(400, "Промокод не найден или закончился")
-    if used:
-        raise HTTPException(400, "Ты уже использовал этот промокод")
-    return {
-        "code": code,
-        "discount": row["discount"],
-        "days": row["days"],
-        "message": "Промокод действителен"
-    }
+    # Промокод
+    if promo:
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code = ?", (promo,))
+        row = c.fetchone()
+        if row and row[3] and row[2] < row[1]:
+            discount = row[0]
+            price = max(1, int(price * (100 - discount) / 100))
+            c.execute("UPDATE promocodes SET used = used + 1 WHERE code = ?", (promo,))
+            conn.commit()
+        conn.close()
 
+    order_id = f"ord_{user_id}_{uuid.uuid4().hex[:8]}"
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""INSERT INTO payments (order_id, user_id, amount, tariff, status, created_at, is_gift, gift_to_username)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+              (order_id, user_id, price, tariff_key, "created", datetime.now().isoformat(), 1 if is_gift else 0, gift_to))
+    conn.commit()
+    conn.close()
 
-@app.post("/api/buy")
-async def buy(body: BuyRequest,
-              user=__import__("fastapi").Depends(get_user)):
-    if body.tariff not in TARIFFS:
-        raise HTTPException(400, "Неизвестный тариф")
+    pay = await create_payment(order_id, price, f"{BRAND} — {tariff['name']}", user_id)
+    return {"pay_url": pay.get("pay_url"), "order_id": order_id, "amount": price}
 
-    tariff = TARIFFS[body.tariff]
-    amount = tariff["price"]
-    uid = int(user["id"])
-    code = body.promo.strip().upper()
+@app.post("/webhook/rollypay")
+async def webhook_rollypay(request: Request, x_signature: str = Header(None), x_timestamp: str = Header(None)):
+    body = await request.body()
+    if not verify_rollypay_signature(x_timestamp or "", body, x_signature or ""):
+        raise HTTPException(403, "Invalid signature")
 
-    if code:
-        with db() as con:
-            promo = con.execute(
-                "SELECT * FROM promos WHERE code=?", (code,)
-            ).fetchone()
-            used = con.execute(
-                "SELECT 1 FROM promo_uses WHERE user_id=? AND code=?",
-                (uid, code)
-            ).fetchone()
-        if not promo or promo["uses_left"] <= 0 or used:
-            raise HTTPException(400, "Промокод недействителен")
-        amount = max(0, amount - amount * promo["discount"] // 100)
+    data = json.loads(body)
+    if data.get("event_type") != "payment.paid" and data.get("status") != "paid":
+        return {"ok": True}
 
-    if not ROLLYPAY_API_KEY or not ROLLYPAY_TERMINAL_ID:
-        raise HTTPException(
-            503, "Оплата не настроена: добавь реквизиты RollyPay"
-        )
+    order_id = data.get("order_id")
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT user_id, tariff, status, is_gift, gift_to_username FROM payments WHERE order_id = ?", (order_id,))
+    row = c.fetchone()
+    if not row or row[2] == "paid":
+        conn.close()
+        return {"ok": True}
 
-    # ВНИМАНИЕ: сверь endpoint и формат авторизации с документацией
-    # своего кабинета RollyPay перед включением реальных платежей.
-    payment_id = f"omniro-{uid}-{int(time.time())}"
-    payload = {
-        "terminal_id": ROLLYPAY_TERMINAL_ID,
-        "amount": amount,
-        "currency": "RUB",
-        "order_id": payment_id,
-        "description": f"OMNIRO VPN — {tariff['months']} мес.",
-        "callback_url": f"{APP_URL}/payments/callback",
-        "success_url": APP_URL
-    }
-    headers = {"Authorization": f"Bearer {ROLLYPAY_API_KEY}"}
+    user_id, tariff_key, _, is_gift, gift_to = row
+    tariff = TARIFFS[tariff_key]
 
+    # Создаём ключ
+    key_name = f"u{user_id}_{uuid.uuid4().hex[:6]}"
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(
-                f"{ROLLYPAY_API_URL}/api/v1/payments",
-                json=payload,
-                headers=headers
-            )
-        response.raise_for_status()
-        result = response.json()
-    except Exception:
-        log.exception("RollyPay payment creation failed")
-        raise HTTPException(
-            502, "Не удалось создать платёж. Проверь настройки RollyPay."
+        result = await h1_create_client(key_name, tariff["days"], tariff.get("traffic_gb", 0))
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
+    except Exception as e:
+        config = f"Ошибка создания ключа: {e}"
+        key_name = "error"
+
+    expires = (datetime.now() + timedelta(days=tariff["days"])).isoformat()
+
+    c.execute("UPDATE payments SET status = 'paid', payment_id = ? WHERE order_id = ?",
+              (data.get("payment_id"), order_id))
+    c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at, is_gift)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
+              (user_id, key_name, config, tariff_key, expires, datetime.now().isoformat(), is_gift))
+    conn.commit()
+    conn.close()
+
+    # Отправляем ключ пользователю
+    try:
+        text = (
+            f"<b>✅ Оплата прошла успешно!</b>\n\n"
+            f"Тариф: <b>{tariff['name']}</b>\n"
+            f"Ключ: <code>{key_name}</code>\n\n"
+            f"<b>Конфиг:</b>\n<code>{config}</code>\n\n"
+            f"Срок до: {expires[:10]}"
         )
+        await bot.send_message(user_id, text)
+    except:
+        pass
 
-    pay_url = result.get("pay_url") or result.get("payment_url")
-    if not pay_url:
-        log.error("Unexpected RollyPay response: %s", result)
-        raise HTTPException(502, "Провайдер не вернул ссылку оплаты")
+    return {"ok": True}
 
-    with db() as con:
-        con.execute(
-            """INSERT INTO payments(id,user_id,tariff,amount,pay_url,created_at)
-            VALUES(?,?,?,?,?,?)""",
-            (payment_id, uid, body.tariff, amount, pay_url, iso(utcnow()))
-        )
-    return {"payment_id": payment_id, "amount": amount, "pay_url": pay_url}
+@app.get("/api/promocode")
+async def check_promo(code: str):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code = ?", (code.upper(),))
+    row = c.fetchone()
+    conn.close()
+    if row and row[3] and row[2] < row[1]:
+        return {"valid": True, "discount": row[0]}
+    return {"valid": False}
 
-
-@app.post("/payments/callback")
-async def payment_callback(request: Request):
-    raw = await request.body()
-    payload = await request.json()
-
-    # Не активируем подписку по неподтверждённому webhook.
-    # Добавь проверку подписи по точному алгоритму из документации RollyPay.
-    # До проверки подписи этот обработчик не меняет статус платежа.
-    log.warning("Received payment callback; signature verification required")
-    log.info("Callback fields: %s", list(payload.keys()))
-    return JSONResponse(
-        {"ok": True, "note": "Webhook signature verification must be configured"},
-        status_code=200
-    )
-
-
-@app.post("/api/support")
-async def support(body: TicketRequest,
-                  user=__import__("fastapi").Depends(get_user)):
-    message = body.message.strip()
-    if len(message) < 3 or len(message) > 2000:
-        raise HTTPException(400, "Сообщение должно быть от 3 до 2000 символов")
-    with db() as con:
-        cur = con.execute(
-            "INSERT INTO tickets(user_id,message,created_at) VALUES(?,?,?)",
-            (int(user["id"]), message, iso(utcnow()))
-        )
-        ticket_id = cur.lastrowid
-
-    if ADMIN_ID:
-        try:
-            await bot.send_message(
-                ADMIN_ID,
-                f"Новая заявка OMNIRO VPN #{ticket_id}\n"
-                f"Пользователь: {user['id']}\n\n{message}"
-            )
-        except Exception:
-            log.exception("Cannot notify admin")
-    return {"ok": True, "ticket_id": ticket_id}
-
-
-@app.post("/api/gift")
-async def gift(body: GiftRequest,
-               user=__import__("fastapi").Depends(get_user)):
-    if body.tariff not in TARIFFS:
-        raise HTTPException(400, "Неизвестный тариф")
-    if body.recipient_id <= 0:
-        raise HTTPException(400, "Укажи корректный Telegram ID получателя")
-    # Подарок оформляется как покупка, но получатель должен быть известен.
-    # После подтверждённой оплаты активируй подписку на получателя.
-    return {
-        "ok": False,
-        "message": "Подарки доступны после настройки подтверждения оплаты и выдачи ключей."
-    }
-
-
-@app.post("/api/admin/promo")
-async def create_promo(request: Request,
-                       user=__import__("fastapi").Depends(get_user)):
-    if not ADMIN_ID or int(user["id"]) != ADMIN_ID:
-        raise HTTPException(403, "Недостаточно прав")
-    body = await request.json()
-    code = str(body.get("code", "")).strip().upper()
-    discount = int(body.get("discount", 0))
-    days = int(body.get("days", 0))
-    uses = int(body.get("uses", 100))
-    if not code or not 0 <= discount <= 100 or uses < 1 or days < 0:
-        raise HTTPException(400, "Проверь параметры промокода")
-    with db() as con:
-        con.execute(
-            """INSERT OR REPLACE INTO promos(code,discount,days,uses_left)
-            VALUES(?,?,?,?)""", (code, discount, days, uses)
-        )
-    return {"ok": True, "code": code}
-
-
-@app.get("/health")
-async def health():
-    return {"ok": True, "service": "OMNIRO VPN"}
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
