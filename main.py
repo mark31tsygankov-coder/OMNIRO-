@@ -24,20 +24,23 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bot")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip()]
-RP_KEY = os.getenv("ROLLYPAY_API_KEY", "")
-RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "")
-RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8708312537:AAG1yrOZc5SWyl2JFXxsNQKE4ga8-Dl7ZRA")
+ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "8995385837").split(",") if i.strip()]
+RP_KEY = os.getenv("ROLLYPAY_API_KEY", "Y9ZGC5UCRFgCloE-uluVczR7o12ju6GTb-oRyHaBqRk")
+RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "akjiGkcHyj6dt_WmzbSYeBBorTOnvZ1ucGQzl0BFGdk")
+RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "d21c4db8-e234-4a9b-a00a-2194420af7df")
 RP_BASE = os.getenv("ROLLYPAY_BASE_URL", "https://rollypay.io")
 ALLOW_TEST = os.getenv("ALLOW_TEST_PAYMENTS", "0") == "1"
-H1_URL = os.getenv("H1CLOUD_API_URL", "").rstrip("/")
-H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "")
+H1_URL = os.getenv("H1CLOUD_API_URL", "https://s-25154.pl7.h1clayd.click/api").rstrip("/")
+H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "2ead850e5fe347fa9ed81f7838d64fc5590facdea2b94737ba7fff788bd55bb8")
 BASE_URL = (os.getenv("BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").lstrip("@")
+POLICY_URL = os.getenv("POLICY_URL", "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99")
+OFFER_URL = os.getenv("OFFER_URL", "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15")
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 PORT = int(os.getenv("PORT", "10000"))
 TG_SECRET = hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:48]
-BRAND = "VPN SERVICE"
+BRAND = "OMNIRO VPN"
 MINI_APP_URL = os.getenv("MINI_APP_URL", "https://botvpnzayou.onrender.com")
 
 PLANS = {
