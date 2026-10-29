@@ -847,57 +847,63 @@ async function checkGiftUser() {
 async function doBuy() {
   if (!selectedTariff) return;
   if (isGift && !giftTarget) return toast('Укажите получателя');
-
   const btn = document.getElementById('btn-buy-final');
   btn.disabled = true;
-  btn.textContent = 'Создаём...';
-
   try {
     const price = userData.tariffs[selectedTariff].price;
-
-    // 1. Попытка оплаты с баланса
     if (!isGift && (userData.balance || 0) >= price) {
       const r = await fetch('/api/buy_balance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ user_id: uid, tariff: selectedTariff })
       });
-      if (r.ok) {
-        toast('Оплачено с баланса');
-        go('main');
-        await load();
-        btn.disabled = false;
-        btn.textContent = isGift ? 'Подарить' : 'Купить';
-        return;
-      }
+      if (r.ok) { toast('Куплено с баланса'); go('main'); await load(); btn.disabled=false; return; }
     }
-
-    // 2. Создаём платёж
     const r = await fetch('/api/create_payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        user_id: uid,
-        tariff: selectedTariff,
-        is_gift: isGift,
-        gift_to: giftTarget
+        user_id: uid, tariff: selectedTariff,
+        is_gift: isGift, gift_to: giftTarget
       })
     });
     const d = await r.json();
-
-    if (d.pay_url) {
-      // Показываем кнопку "Открыть оплату"
-      showPayButton(d.pay_url, d.amount);
-    } else {
-      toast('Ошибка создания платежа');
-    }
-  } catch (e) {
-    toast('Ошибка');
-  }
-
+    if (d.pay_url) tg.openLink(d.pay_url);
+    else toast('Ошибка');
+  } catch(e) { toast('Ошибка'); }
   btn.disabled = false;
-  btn.textContent = isGift ? 'Подарить' : 'Купить';
 }
+
+async function takeTrial() {
+  try {
+    const r = await fetch('/api/trial', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ user_id: uid })
+    });
+    if (r.ok) { toast('Пробный активирован'); await load(); }
+    else { const e = await r.json(); toast(e.detail || 'Уже использован'); }
+  } catch(e) { toast('Ошибка'); }
+}
+
+window.copyCfg = id => {
+  const s = (userData.subscriptions||[]).find(x => x.id == id);
+  if (s) { navigator.clipboard.writeText(s.config || s.key_name); toast('Скопировано'); }
+};
+window.renewSub = async id => {
+  const r = await fetch('/api/renew', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: uid, sub_id: id })
+  });
+  const d = await r.json();
+  if (d.pay_url) tg.openLink(d.pay_url);
+};
+window.delSub = async id => {
+  if (!confirm('Удалить подписку?')) return;
+  await fetch('/api/delete_sub', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ user_id: uid, sub_id: id })
+  });
+  toast('Удалено');
+  await load();
+};
 
 // Topup
 document.querySelectorAll('#topup-chips .chip').forEach(c => {
@@ -922,48 +928,36 @@ function updateTopupSum() {
 }
 async function doTopup() {
   if (selectedTopup < 50) return toast('Минимум 50 ₽');
-
   const r = await fetch('/api/create_payment', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ user_id: uid, is_topup: true, amount: selectedTopup })
   });
   const d = await r.json();
-  if (d.pay_url) {
-    showPayButton(d.pay_url, d.amount);
-  } else {
-    toast('Ошибка');
-  }
+  if (d.pay_url) tg.openLink(d.pay_url);
 }
 
-function showPayButton(url, amount) {
-  // Создаём модалку с кнопкой открыть
-  const old = document.getElementById('pay-modal');
-  if (old) old.remove();
-
-  const modal = document.createElement('div');
-  modal.id = 'pay-modal';
-  modal.style.cssText = `
-    position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:300;
-    display:flex;align-items:flex-end;justify-content:center;
-  `;
-  modal.innerHTML = `
-    <div style="background:#141414;border-radius:20px 20px 0 0;width:100%;max-width:500px;padding:24px 20px 40px;">
-      <div style="font-size:18px;font-weight:700;margin-bottom:8px">Оплата готова</div>
-      <div style="color:#8e8e93;font-size:14px;margin-bottom:20px">Сумма: <b style="color:#fff">${amount} ₽</b></div>
-      <button id="open-pay" style="width:100%;padding:16px;background:#fff;color:#000;border:none;border-radius:14px;font-size:16px;font-weight:700;margin-bottom:12px;">
-        Открыть оплату
-      </button>
-      <button onclick="document.getElementById('pay-modal').remove()" style="width:100%;padding:14px;background:transparent;color:#8e8e93;border:none;font-size:15px;">
-        Закрыть
-      </button>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  document.getElementById('open-pay').onclick = () => {
-    tg.openLink(url);
-  };
+async function activatePromo() {
+  const code = document.getElementById('promo-code').value.trim();
+  if (!code) return toast('Введите код');
+  toast('Промокод будет применён при следующей покупке');
 }
+
+async function loadRefs() {
+  document.getElementById('refs-count').textContent = userData.refs_count || 0;
+  const r = await fetch('/api/ref_link?user_id=' + uid);
+  const d = await r.json();
+  document.getElementById('ref-link').textContent = d.link || '—';
+}
+function copyRef() {
+  navigator.clipboard.writeText(document.getElementById('ref-link').textContent);
+  toast('Ссылка скопирована');
+}
+
+if (new URLSearchParams(location.search).get('paid') === '1') {
+  toast('Оплата прошла');
+  setTimeout(load, 2000);
+}
+load();
 </script>
 </body>
 </html>
