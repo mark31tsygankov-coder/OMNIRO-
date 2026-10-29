@@ -3,48 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>OMNIRO VPN</title>
+<title>OMNIRO</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
 :root {
-  --bg: #0a0a0a;
-  --card: #141414;
-  --border: #262626;
-  --text: #f5f5f5;
-  --muted: #a3a3a3;
+  --bg: #050505;
+  --card: #0f0f0f;
+  --border: #1f1f1f;
+  --text: #fafafa;
+  --muted: #737373;
   --accent: #ffffff;
   --green: #22c55e;
   --red: #ef4444;
-  --radius: 16px;
+  --radius: 20px;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  padding-bottom: 50px;
+  overflow-x: hidden;
 }
 .header {
-  padding: 32px 20px 28px;
+  padding: 40px 24px 32px;
   text-align: center;
-  border-bottom: 1px solid var(--border);
+  position: relative;
 }
-.header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
-.header p { color: var(--muted); margin-top: 6px; font-size: 14px; }
-.container { padding: 20px 16px; }
+.header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 60px; height: 3px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  border-radius: 2px;
+}
+.logo {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  background: linear-gradient(135deg, #fff 0%, #a3a3a3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: fadeUp 0.6s ease;
+}
+.tagline {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 8px;
+  animation: fadeUp 0.6s ease 0.1s both;
+}
+.container { padding: 24px 16px 80px; }
 .tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   overflow-x: auto;
   scrollbar-width: none;
+  animation: fadeUp 0.5s ease 0.15s both;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
   flex-shrink: 0;
-  padding: 10px 18px;
+  padding: 11px 20px;
   border-radius: 999px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -52,60 +75,91 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 .tab.active {
-  background: var(--accent);
+  background: #fff;
   color: #000;
-  border-color: var(--accent);
+  border-color: #fff;
+  transform: scale(1.03);
+  box-shadow: 0 4px 20px rgba(255,255,255,0.15);
 }
+.page { display: none; animation: fadeIn 0.35s ease; }
+.page.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 .card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 22px;
   margin-bottom: 16px;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
+.card:active { transform: scale(0.985); }
 .card-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 18px;
 }
 .tariff-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 .tariff {
-  background: #1a1a1a;
+  background: #141414;
   border: 1.5px solid var(--border);
-  border-radius: 14px;
-  padding: 16px 12px;
+  border-radius: 16px;
+  padding: 18px 14px;
   text-align: center;
   cursor: pointer;
-  transition: 0.15s;
+  transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+  position: relative;
+  overflow: hidden;
+}
+.tariff::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), transparent);
+  opacity: 0;
+  transition: opacity 0.25s;
 }
 .tariff.active {
   border-color: #fff;
-  background: #222;
+  background: #1a1a1a;
+  transform: scale(1.02);
+  box-shadow: 0 0 0 1px #fff, 0 8px 24px rgba(0,0,0,0.4);
 }
+.tariff.active::before { opacity: 1; }
 .tariff .name { font-size: 14px; font-weight: 500; }
-.tariff .price { font-size: 22px; font-weight: 700; margin: 6px 0 2px; }
+.tariff .price { font-size: 24px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -0.5px; }
 .tariff .days { font-size: 12px; color: var(--muted); }
 .btn {
   width: 100%;
-  padding: 16px;
+  padding: 17px;
   border: none;
-  border-radius: 14px;
+  border-radius: 16px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  margin-top: 14px;
+  margin-top: 16px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
 }
-.btn-primary { background: #fff; color: #000; }
-.btn-primary:active { transform: scale(0.98); }
+.btn-primary {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 4px 20px rgba(255,255,255,0.2);
+}
+.btn-primary:active { transform: scale(0.97); }
+.btn-primary:disabled { opacity: 0.5; }
 .btn-outline {
   background: transparent;
   color: #fff;
@@ -113,102 +167,122 @@ body {
 }
 .input {
   width: 100%;
-  padding: 14px 16px;
-  background: #1a1a1a;
+  padding: 15px 18px;
+  background: #141414;
   border: 1.5px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   color: #fff;
   font-size: 16px;
   outline: none;
-  margin-bottom: 10px;
+  transition: border-color 0.2s;
 }
 .input:focus { border-color: #555; }
 .sub {
-  background: #1a1a1a;
+  background: #141414;
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 16px;
-  margin-bottom: 12px;
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 14px;
+  animation: fadeUp 0.4s ease;
 }
 .sub-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 .badge {
-  background: #262626;
+  background: #1f1f1f;
   color: #fff;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 20px;
   font-weight: 600;
 }
 .sub-config {
-  font-family: ui-monospace, monospace;
+  font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 12px;
   word-break: break-all;
   color: var(--muted);
   margin: 10px 0;
-  max-height: 60px;
+  line-height: 1.5;
+  max-height: 54px;
   overflow: hidden;
 }
 .sub-actions {
   display: flex;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 14px;
 }
 .sub-actions button {
   flex: 1;
-  padding: 10px;
-  border-radius: 10px;
+  padding: 11px;
+  border-radius: 12px;
   border: 1px solid var(--border);
-  background: #111;
+  background: #0a0a0a;
   color: #fff;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.15s;
 }
-.qr-box { text-align: center; margin: 16px 0; }
-.qr-box canvas { border-radius: 12px; }
+.sub-actions button:active { transform: scale(0.96); }
+.qr-box { text-align: center; margin: 16px 0 8px; }
+.qr-box canvas { border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
 .profile {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
 }
 .avatar {
-  width: 52px;
-  height: 52px;
+  width: 56px; height: 56px;
   border-radius: 50%;
-  background: #262626;
+  background: linear-gradient(135deg, #262626, #171717);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
+  border: 2px solid #333;
 }
-.hidden { display: none !important; }
 .success {
-  background: #0f2a1a;
+  background: linear-gradient(135deg, #052e16, #0f2a1a);
   border: 1px solid #166534;
   color: #4ade80;
-  padding: 14px;
-  border-radius: 12px;
+  padding: 16px;
+  border-radius: 16px;
   text-align: center;
-  margin-bottom: 16px;
-  font-weight: 500;
+  margin-bottom: 20px;
+  font-weight: 600;
+  animation: fadeUp 0.4s ease;
 }
-.empty { text-align: center; color: var(--muted); padding: 30px 0; }
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 48px 20px;
+  font-size: 15px;
+}
+.step-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: -0.3px;
+}
+.step-desc {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 20px;
+}
 </style>
 </head>
 <body>
 <div class="header">
-  <h1>OMNIRO</h1>
-  <p>Premium VPN</p>
+  <div class="logo">OMNIRO</div>
+  <div class="tagline">Premium VPN</div>
 </div>
 
 <div class="container">
-  <div id="paid-ok" class="success hidden">Оплата прошла. Ключ появится ниже через пару секунд.</div>
+  <div id="paid-ok" class="success" style="display:none">Оплата прошла. Ключ появится через пару секунд.</div>
 
   <div class="tabs">
     <div class="tab active" data-t="buy">Купить</div>
@@ -217,47 +291,53 @@ body {
     <div class="tab" data-t="profile">Профиль</div>
   </div>
 
-  <div id="p-buy">
+  <!-- BUY -->
+  <div id="p-buy" class="page active">
     <div class="card">
-      <div class="card-title">Тарифы</div>
+      <div class="step-title">Выбери тариф</div>
+      <div class="step-desc">Безлимитный трафик · Все локации</div>
       <div class="tariff-grid" id="tariffs"></div>
-      <input class="input" id="promo" placeholder="Промокод" style="margin-top:14px">
-      <button class="btn btn-primary" id="pay-btn">Оплатить</button>
+      <input class="input" id="promo" placeholder="Промокод" style="margin-top:18px">
+      <button class="btn btn-primary" id="pay-btn">Перейти к оплате</button>
     </div>
   </div>
 
-  <div id="p-subs" class="hidden">
+  <!-- SUBS -->
+  <div id="p-subs" class="page">
     <div class="card">
-      <div class="card-title">Мои подписки</div>
+      <div class="card-title">Активные подписки</div>
       <div id="subs-list"><div class="empty">Загрузка...</div></div>
     </div>
   </div>
 
-  <div id="p-gift" class="hidden">
+  <!-- GIFT -->
+  <div id="p-gift" class="page">
     <div class="card">
-      <div class="card-title">Подарить другу</div>
+      <div class="step-title">Подарить подписку</div>
+      <div class="step-desc">Друг должен быть зарегистрирован в боте</div>
       <input class="input" id="gift-user" placeholder="@username">
-      <div id="gift-check" style="font-size:13px;margin-bottom:12px;color:var(--muted)"></div>
+      <div id="gift-check" style="font-size:13px;margin:10px 0 16px;color:var(--muted);min-height:18px"></div>
       <div class="tariff-grid" id="gift-tariffs"></div>
       <button class="btn btn-primary" id="gift-btn">Подарить</button>
     </div>
   </div>
 
-  <div id="p-profile" class="hidden">
+  <!-- PROFILE -->
+  <div id="p-profile" class="page">
     <div class="card">
       <div class="card-title">Профиль</div>
       <div class="profile">
         <div class="avatar" id="av">?</div>
         <div>
-          <div style="font-weight:600;font-size:17px" id="pname">—</div>
-          <div style="color:var(--muted);font-size:14px" id="puname">—</div>
+          <div style="font-weight:700;font-size:18px" id="pname">—</div>
+          <div style="color:var(--muted);font-size:14px;margin-top:2px" id="puname">—</div>
         </div>
       </div>
-      <div style="margin-top:16px;font-size:13px;color:var(--muted)" id="pdate"></div>
+      <div style="margin-top:18px;font-size:13px;color:var(--muted)" id="pdate"></div>
     </div>
     <div class="card" style="text-align:center">
-      <a class="btn btn-outline" id="support" href="#" style="text-decoration:none;display:block">Поддержка</a>
-      <div style="margin-top:14px;font-size:12px;color:#555">
+      <a class="btn btn-outline" id="support" href="#" style="text-decoration:none;display:block;margin-top:0">Написать в поддержку</a>
+      <div style="margin-top:16px;font-size:12px;color:#444">
         <a href="https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99" style="color:#555">Политика</a> · 
         <a href="https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15" style="color:#555">Оферта</a>
       </div>
@@ -269,23 +349,20 @@ body {
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
-tg.setHeaderColor('#0a0a0a');
-tg.setBackgroundColor('#0a0a0a');
+tg.setHeaderColor('#050505');
+tg.setBackgroundColor('#050505');
 
 const user = tg.initDataUnsafe?.user || {};
 const uid = user.id;
-let selected = '1m';
-let giftSelected = '1m';
-let tariffs = {};
-let subs = [];
+let selected = '1m', giftSelected = '1m';
+let tariffs = {}, subs = [];
 
 document.querySelectorAll('.tab').forEach(t => {
   t.onclick = () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
-    ['buy','subs','gift','profile'].forEach(p => {
-      document.getElementById('p-'+p).classList.toggle('hidden', p !== t.dataset.t);
-    });
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('p-' + t.dataset.t).classList.add('active');
     if (t.dataset.t === 'subs') renderSubs();
   };
 });
@@ -298,17 +375,18 @@ async function load() {
   subs = d.subscriptions;
 
   document.getElementById('pname').textContent = d.first_name || 'Пользователь';
-  document.getElementById('puname').textContent = d.username ? '@'+d.username : 'ID '+uid;
+  document.getElementById('puname').textContent = d.username ? '@' + d.username : 'ID ' + uid;
   document.getElementById('av').textContent = (d.first_name || 'U')[0].toUpperCase();
   if (d.created_at) document.getElementById('pdate').textContent = 'С нами с ' + d.created_at.slice(0,10);
 
   const grid = document.getElementById('tariffs');
   const ggrid = document.getElementById('gift-tariffs');
   grid.innerHTML = ggrid.innerHTML = '';
-  for (const [k,t] of Object.entries(tariffs)) {
+  Object.entries(tariffs).forEach(([k, t], i) => {
     const el = document.createElement('div');
-    el.className = 'tariff' + (k==='1m'?' active':'');
-    el.innerHTML = `<div class="name">${t.name}</div><div class="price">${t.price}₽</div><div class="days">${t.days} дн.</div>`;
+    el.className = 'tariff' + (k === '1m' ? ' active' : '');
+    el.style.animationDelay = (i * 0.05) + 's';
+    el.innerHTML = `<div class="name">${t.name}</div><div class="price">${t.price}₽</div><div class="days">${t.days} дней</div>`;
     el.onclick = () => {
       document.querySelectorAll('#tariffs .tariff').forEach(e => e.classList.remove('active'));
       el.classList.add('active');
@@ -323,18 +401,18 @@ async function load() {
       giftSelected = k;
     };
     ggrid.appendChild(ge);
-  }
+  });
   renderSubs();
 }
 
 function renderSubs() {
   const box = document.getElementById('subs-list');
   if (!subs.length) {
-    box.innerHTML = '<div class="empty">Подписок пока нет</div>';
+    box.innerHTML = '<div class="empty">Подписок пока нет.<br>Купи первую во вкладке «Купить»</div>';
     return;
   }
-  box.innerHTML = subs.map(s => `
-    <div class="sub">
+  box.innerHTML = subs.map((s, i) => `
+    <div class="sub" style="animation-delay:${i*0.06}s">
       <div class="sub-header">
         <span class="badge">${s.tariff_name}</span>
         <span style="font-size:13px;color:var(--muted)">до ${s.expires_at.slice(0,10)}</span>
@@ -350,82 +428,62 @@ function renderSubs() {
   `).join('');
 
   subs.forEach(s => {
-    if (s.config && (s.config.startsWith('vless://') || s.config.startsWith('ss://') || s.config.includes('://'))) {
-      const el = document.getElementById('qr-'+s.id);
+    if (s.config && (s.config.includes('://'))) {
+      const el = document.getElementById('qr-' + s.id);
       if (el) {
         QRCode.toCanvas(document.createElement('canvas'), s.config, {
-          width: 160, margin: 1,
-          color: { dark: '#ffffff', light: '#141414' }
+          width: 150, margin: 1,
+          color: { dark: '#ffffff', light: '#0f0f0f' }
         }, (err, canvas) => {
-          if (!err) {
-            canvas.style.borderRadius = '12px';
-            el.appendChild(canvas);
-          }
+          if (!err) { canvas.style.borderRadius = '14px'; el.appendChild(canvas); }
         });
       }
     }
   });
 }
 
-window.copyCfg = (id) => {
+window.copyCfg = id => {
   const s = subs.find(x => x.id == id);
   if (s) {
     navigator.clipboard.writeText(s.config || s.key_name);
-    tg.showPopup({ title: 'Скопировано', message: 'Конфиг скопирован', buttons: [{type:'ok'}] });
+    tg.showPopup({ title: 'Скопировано', message: 'Конфиг в буфере', buttons: [{ type: 'ok' }] });
   }
 };
-
-window.renew = async (id) => {
-  const r = await fetch('/api/renew', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_id: uid, sub_id: id})
-  });
+window.renew = async id => {
+  const r = await fetch('/api/renew', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, sub_id: id }) });
   const d = await r.json();
   if (d.pay_url) tg.openLink(d.pay_url);
 };
-
-window.delSub = async (id) => {
-  if (!confirm('Удалить подписку? Ключ будет отозван.')) return;
-  await fetch('/api/delete_sub', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_id: uid, sub_id: id})
-  });
+window.delSub = async id => {
+  if (!confirm('Удалить подписку и отозвать ключ?')) return;
+  await fetch('/api/delete_sub', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, sub_id: id }) });
   await load();
 };
 
 document.getElementById('pay-btn').onclick = async () => {
   const btn = document.getElementById('pay-btn');
-  btn.disabled = true;
-  btn.textContent = 'Создаём...';
+  btn.disabled = true; btn.textContent = 'Создаём платёж...';
   try {
     const r = await fetch('/api/create_payment', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        user_id: uid,
-        tariff: selected,
-        promo: document.getElementById('promo').value
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: uid, tariff: selected, promo: document.getElementById('promo').value })
     });
     const d = await r.json();
     if (d.pay_url) tg.openLink(d.pay_url);
-    else alert('Ошибка создания платежа');
-  } catch(e) {
-    alert(e.message);
-  }
-  btn.disabled = false;
-  btn.textContent = 'Оплатить';
+    else alert('Ошибка');
+  } catch (e) { alert(e.message); }
+  btn.disabled = false; btn.textContent = 'Перейти к оплате';
 };
 
-document.getElementById('gift-user').oninput = async function() {
+document.getElementById('gift-user').oninput = async function () {
   const v = this.value.trim();
   const el = document.getElementById('gift-check');
   if (v.length < 3) { el.textContent = ''; return; }
   const r = await fetch(`/api/check_user?username=${encodeURIComponent(v)}`);
   const d = await r.json();
-  el.textContent = d.exists ? `Найден: ${d.first_name}` : 'Пользователь не найден (должен написать /start)';
+  el.textContent = d.exists ? `✓ Найден: ${d.first_name}` : 'Не найден (должен написать /start)';
   el.style.color = d.exists ? '#22c55e' : '#ef4444';
 };
 
@@ -433,30 +491,19 @@ document.getElementById('gift-btn').onclick = async () => {
   const to = document.getElementById('gift-user').value.trim();
   if (!to) return alert('Укажи @username');
   const r = await fetch('/api/create_payment', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      user_id: uid,
-      tariff: giftSelected,
-      is_gift: true,
-      gift_to: to
-    })
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: uid, tariff: giftSelected, is_gift: true, gift_to: to })
   });
-  if (!r.ok) {
-    const e = await r.json();
-    return alert(e.detail || 'Ошибка');
-  }
+  if (!r.ok) { const e = await r.json(); return alert(e.detail || 'Ошибка'); }
   const d = await r.json();
   if (d.pay_url) tg.openLink(d.pay_url);
 };
 
 if (new URLSearchParams(location.search).get('paid') === '1') {
-  document.getElementById('paid-ok').classList.remove('hidden');
+  document.getElementById('paid-ok').style.display = 'block';
   setTimeout(load, 2500);
 }
-
 document.getElementById('support').href = 'https://t.me/' + ('' || 'support');
-
 load();
 </script>
 </body>
