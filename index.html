@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>OMNIRO VPN</title>
+  <title>VPN Service</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -42,7 +42,6 @@
       padding-bottom: 40px;
     }
 
-    /* Шапка */
     .header {
       display: flex;
       align-items: center;
@@ -70,7 +69,6 @@
       font-family: monospace;
     }
 
-    /* Карточки */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
@@ -90,7 +88,6 @@
       line-height: 1.4;
     }
 
-    /* Переключатель режимов (Себе / Подарок) */
     .mode-switch {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -118,11 +115,9 @@
       color: #000000;
     }
 
-    /* Поле ввода ID для подарка */
     .gift-box {
       display: none;
       margin-top: 12px;
-      animation: fadeIn 0.3s ease;
     }
 
     input {
@@ -134,13 +129,11 @@
       color: #ffffff;
       font-size: 13px;
       outline: none;
-      transition: border-color 0.2s;
     }
     input:focus {
       border-color: var(--border-active);
     }
 
-    /* Заголовки разделов */
     .section-title {
       font-size: 11px;
       text-transform: uppercase;
@@ -150,7 +143,6 @@
       font-weight: 700;
     }
 
-    /* Тарифы сетка */
     .btn-grid {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
@@ -167,15 +159,10 @@
       transition: all 0.2s ease;
     }
 
-    .btn-plan:hover {
-      background: var(--card-hover);
-    }
-
     .btn-plan.selected {
       background: #ffffff;
       color: #000000;
       border-color: #ffffff;
-      transform: translateY(-2px);
     }
 
     .btn-plan.selected .plan-price {
@@ -199,7 +186,6 @@
       color: var(--accent);
     }
 
-    /* Главные закругленные кнопки */
     .btn {
       width: 100%;
       padding: 16px;
@@ -216,7 +202,6 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      transition: opacity 0.2s, transform 0.1s;
     }
 
     .btn:active {
@@ -229,10 +214,6 @@
       color: var(--accent);
       border: 1px solid var(--border-color);
     }
-    .btn-outline:hover {
-      background-color: var(--card-hover);
-      border-color: #444;
-    }
 
     .menu-grid {
       display: grid;
@@ -240,7 +221,6 @@
       gap: 10px;
     }
 
-    /* Экран ключа и результатов */
     .result-box {
       display: flex;
       background: var(--card-bg);
@@ -249,7 +229,6 @@
       padding: 20px;
       flex-direction: column;
       gap: 16px;
-      animation: fadeIn 0.3s ease;
     }
 
     .link-field {
@@ -272,7 +251,6 @@
       border-radius: var(--radius-sm);
       display: inline-block;
       margin: 0 auto;
-      box-shadow: 0 4px 20px rgba(255,255,255,0.05);
     }
     .qr-container img {
       width: 150px;
@@ -283,35 +261,27 @@
     .hidden {
       display: none !important;
     }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
   </style>
 </head>
 <body>
 
-  <!-- ГЛАВНЫЙ ЭКРАН -->
   <div class="container" id="main-view">
     <div class="header">
-      <div class="brand-title">OMNIRO VPN</div>
+      <div class="brand-title">VPN Service</div>
       <div class="user-badge" id="user-id-badge">ID: ...</div>
     </div>
 
     <div class="card">
-      <div class="welcome-title">Быстрый доступ ⚡️</div>
-      <div class="welcome-sub">Выберите тариф и оформите подписку за пару кликов.</div>
+      <div class="welcome-title">Быстрый доступ</div>
+      <div class="welcome-sub">Выберите тариф и оформите подписку.</div>
       
-      <!-- Переключатель Себе / Подарок -->
       <div class="mode-switch">
         <button class="mode-btn active" id="mode-self" onclick="setMode('self')">Себе</button>
-        <button class="mode-btn" id="mode-gift" onclick="setMode('gift')">🎁 Подарить другу</button>
+        <button class="mode-btn" id="mode-gift" onclick="setMode('gift')">В подарок</button>
       </div>
 
-      <!-- Поле ввода ID друга -->
       <div class="gift-box" id="gift-input-box">
-        <input type="number" id="gift-target-id" placeholder="Введите Telegram ID друга (например: 123456789)">
+        <input type="number" id="gift-target-id" placeholder="Введите Telegram ID друга">
       </div>
     </div>
 
@@ -319,38 +289,37 @@
     <div class="btn-grid">
       <div class="btn-plan selected" onclick="selectPlan('m1', 79, this)">
         <div class="plan-name">1 Месяц</div>
-        <div class="plan-price">79 ₽</div>
+        <div class="plan-price">79 руб</div>
       </div>
       <div class="btn-plan" onclick="selectPlan('m3', 219, this)">
         <div class="plan-name">3 Месяца</div>
-        <div class="plan-price">219 ₽</div>
+        <div class="plan-price">219 руб</div>
       </div>
       <div class="btn-plan" onclick="selectPlan('m6', 399, this)">
         <div class="plan-name">6 Месяцев</div>
-        <div class="plan-price">399 ₽</div>
+        <div class="plan-price">399 руб</div>
       </div>
     </div>
 
-    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">💳 Оплатить 79 ₽</button>
+    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">Оплатить 79 руб</button>
 
     <div class="section-title">Управление</div>
     <div class="menu-grid">
-      <button class="btn btn-outline" onclick="openMySubs()">📦 Мои подписки</button>
-      <button class="btn btn-outline" onclick="openPromos()">🎟 Промокоды</button>
-      <button class="btn btn-outline" onclick="openReferrals()">👥 Рефералы</button>
-      <button class="btn btn-outline" onclick="openSupport()">🆘 Поддержка</button>
+      <button class="btn btn-outline" onclick="openMySubs()">Мои подписки</button>
+      <button class="btn btn-outline" onclick="openPromos()">Промокоды</button>
+      <button class="btn btn-outline" onclick="openReferrals()">Рефералы</button>
+      <button class="btn btn-outline" onclick="openSupport()">Поддержка</button>
     </div>
   </div>
 
-  <!-- ЭКРАН ВЫДАЧИ КЛЮЧА И QR -->
   <div class="container hidden" id="result-view">
     <div class="header">
-      <div class="brand-title">Ваш VPN Ключ</div>
-      <div class="user-badge" onclick="backToMain()" style="cursor: pointer;">✕ Закрыть</div>
+      <div class="brand-title">VPN Ключ</div>
+      <div class="user-badge" onclick="backToMain()" style="cursor: pointer;">Закрыть</div>
     </div>
 
     <div class="result-box">
-      <div class="welcome-sub" id="result-desc">Подписка успешно активирована! Отсканируйте QR-код или скопируйте ключ ниже.</div>
+      <div class="welcome-sub" id="result-desc">Подписка успешно активирована. Скопируйте ключ или отсканируйте QR-код.</div>
       
       <div class="qr-container">
         <img id="qr-img" src="" alt="QR Code">
@@ -359,8 +328,8 @@
       <div class="section-title">Ключ подключения</div>
       <div class="link-field" id="vpn-link-text">vless://...</div>
 
-      <button class="btn" onclick="copyKey()">📋 Скопировать ключ</button>
-      <button class="btn btn-outline" onclick="openInApp()">➕ Открыть в приложении</button>
+      <button class="btn" onclick="copyKey()">Скопировать ключ</button>
+      <button class="btn btn-outline" onclick="openInApp()">Открыть в приложении</button>
     </div>
   </div>
 
@@ -370,7 +339,7 @@
 
     let selectedPlanKey = 'm1';
     let selectedPrice = 79;
-    let purchaseMode = 'self'; // 'self' или 'gift'
+    let purchaseMode = 'self';
     let activeVpnLink = '';
 
     const user = tg.initDataUnsafe?.user;
@@ -380,8 +349,6 @@
 
     function setMode(mode) {
       purchaseMode = mode;
-      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-      
       const selfBtn = document.getElementById('mode-self');
       const giftBtn = document.getElementById('mode-gift');
       const giftBox = document.getElementById('gift-input-box');
@@ -391,17 +358,16 @@
         selfBtn.classList.add('active');
         giftBtn.classList.remove('active');
         giftBox.classList.add('hidden');
-        payBtn.innerText = `💳 Оплатить ${selectedPrice} ₽`;
+        payBtn.innerText = `Оплатить ${selectedPrice} руб`;
       } else {
         giftBtn.classList.add('active');
         selfBtn.classList.remove('active');
         giftBox.classList.remove('hidden');
-        payBtn.innerText = `🎁 Оплатить подарок (${selectedPrice} ₽)`;
+        payBtn.innerText = `Оплатить подарок (${selectedPrice} руб)`;
       }
     }
 
     function selectPlan(key, price, element) {
-      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
       selectedPlanKey = key;
       selectedPrice = price;
       
@@ -410,25 +376,22 @@
 
       const payBtn = document.getElementById('pay-btn');
       if (purchaseMode === 'self') {
-        payBtn.innerText = `💳 Оплатить ${price} ₽`;
+        payBtn.innerText = `Оплатить ${price} руб`;
       } else {
-        payBtn.innerText = `🎁 Оплатить подарок (${price} ₽)`;
+        payBtn.innerText = `Оплатить подарок (${price} руб)`;
       }
     }
 
     function proceedToPay() {
-      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-
       let targetId = null;
       if (purchaseMode === 'gift') {
         targetId = document.getElementById('gift-target-id').value.trim();
         if (!targetId) {
-          tg.showAlert("Пожалуйста, введите Telegram ID друга для подарка!");
+          tg.showAlert("Введите Telegram ID друга для подарка.");
           return;
         }
       }
 
-      // Передаем данные боту
       tg.sendData(JSON.stringify({ 
         action: 'buy_plan', 
         plan: selectedPlanKey, 
@@ -454,7 +417,6 @@
       tg.sendData(JSON.stringify({ action: 'open_support' }));
     }
 
-    // Функция для программного отображения экрана успешного получения ключа
     function showSuccessKey(link, descText = '') {
       activeVpnLink = link;
       document.getElementById('main-view').classList.add('hidden');
@@ -476,8 +438,7 @@
 
     function copyKey() {
       navigator.clipboard.writeText(activeVpnLink);
-      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-      tg.showAlert("Ключ скопирован в буфер обмена!");
+      tg.showAlert("Ключ скопирован в буфер обмена.");
     }
 
     function openInApp() {
