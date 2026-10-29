@@ -12,10 +12,13 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Message, Update
+from aiogram.filters import CommandStart, Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Message, Update, CallbackQuery
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 import uvicorn
 
 # ==================== CONFIG ====================
@@ -41,26 +44,59 @@ WEBHOOK_PATH = f"/webhook/telegram/{BOT_TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}"
 
 TARIFFS = {
-    "1m":  {"name": "1 месяц",    "days": 30,  "price": 79},
-    "3m":  {"name": "3 месяца",   "days": 90,  "price": 199},
-    "6m":  {"name": "6 месяцев",  "days": 180, "price": 349},
-    "12m": {"name": "12 месяцев", "days": 365, "price": 599},
+    "trial": {"name": "Пробный", "days": 1, "price": 0, "traffic_gb": 10, "devices": 1},
+    "1m":    {"name": "1 месяц", "days": 30, "price": 79, "traffic_gb": 0, "devices": 3},
+    "3m":    {"name": "3 месяца", "days": 90, "price": 199, "traffic_gb": 0, "devices": 3},
+    "6m":    {"name": "6 месяцев", "days": 180, "price": 349, "traffic_gb": 0, "devices": 5},
+    "12m":   {"name": "12 месяцев", "days": 365, "price": 599, "traffic_gb": 0, "devices": 5},
 }
+
+TOPUP_AMOUNTS = [100, 200, 500, 1000]
 
 # ==================== DB ====================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, created_at TEXT)""")
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        balance REAL DEFAULT 0,
+        referrer_id INTEGER,
+        trial_used INTEGER DEFAULT 0,
+        created_at TEXT
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS subscriptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, key_name TEXT, config TEXT,
-        tariff TEXT, expires_at TEXT, created_at TEXT, is_gift INTEGER DEFAULT 0, gifted_from INTEGER)""")
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        key_name TEXT,
+        config TEXT,
+        tariff TEXT,
+        expires_at TEXT,
+        created_at TEXT,
+        is_gift INTEGER DEFAULT 0,
+        gifted_from INTEGER
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS payments (
-        order_id TEXT PRIMARY KEY, user_id INTEGER, amount REAL, tariff TEXT, status TEXT,
-        payment_id TEXT, created_at TEXT, is_gift INTEGER DEFAULT 0, gift_to_username TEXT)""")
+        order_id TEXT PRIMARY KEY,
+        user_id INTEGER,
+        amount REAL,
+        tariff TEXT,
+        status TEXT,
+        payment_id TEXT,
+        created_at TEXT,
+        is_gift INTEGER DEFAULT 0,
+        gift_to_username TEXT,
+        is_topup INTEGER DEFAULT 0
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS promocodes (
-        code TEXT PRIMARY KEY, discount_percent INTEGER, max_uses INTEGER, used INTEGER DEFAULT 0, active INTEGER DEFAULT 1)""")
+        code TEXT PRIMARY KEY,
+        discount_percent INTEGER DEFAULT 0,
+        bonus_balance REAL DEFAULT 0,
+        max_uses INTEGER,
+        used INTEGER DEFAULT 0,
+        active INTEGER DEFAULT 1
+    )""")
     conn.commit()
     conn.close()
 
@@ -68,11 +104,15 @@ def get_db():
     return sqlite3.connect(DB_PATH)
 
 # ==================== H1CLOUD ====================
-async def h1_create_client(name: str, days: int) -> dict:
+async def h1_create_client(name: str, days: int, traffic_gb: int = 0, devices: int = 0) -> dict:
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+        payload = {"name": name, "days": max(1, days)}
+        if traffic_gb > 0:
+            payload["traffic_limit_gb"] = traffic_gb
+        if devices > 0:
+            payload["device_limit"] = devices
         r = await client.post(f"{H1_URL}/create",
-            headers={"Authorization": f"Bearer {H1_TOKEN}"},
-            json={"name": name, "days": days})
+            headers={"Authorization": f"Bearer {H1_TOKEN}"}, json=payload)
         r.raise_for_status()
         return r.json()
 
@@ -110,46 +150,76 @@ def verify_signature(timestamp: str, body: bytes, signature: str) -> bool:
     return hmac.compare_digest(mac.hexdigest(), signature)
 
 # ==================== BOT ====================
+storage = MemoryStorage()
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
+dp = Dispatcher(storage=storage)
 
-def main_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
+class AdminStates(StatesGroup):
+    wait_promo = State()
+    wait_broadcast = State()
+    wait_give_sub = State()
+
+def main_kb(user_id: int = None):
+    rows = [
         [InlineKeyboardButton(text="🚀 Открыть приложение", web_app=WebAppInfo(url=MINI_APP_URL))],
         [InlineKeyboardButton(text="💳 Купить", callback_data="buy"),
          InlineKeyboardButton(text="🔑 Мои подписки", callback_data="mysubs")],
-        [InlineKeyboardButton(text="🎁 Подарить", callback_data="gift")],
-        [InlineKeyboardButton(text="💬 Поддержка", url=f"https://t.me/{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "https://t.me/")],
-    ])
+        [InlineKeyboardButton(text="🎁 Рефералы", callback_data="refs")],
+    ]
+    if user_id and user_id in ADMIN_IDS:
+        rows.append([InlineKeyboardButton(text="🛠 Админ-панель", callback_data="admin")])
+    rows.append([InlineKeyboardButton(text="💬 Поддержка", url=f"https://t.me/{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "https://t.me/")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
-    try:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, created_at) VALUES (?,?,?,?)",
-                  (message.from_user.id, message.from_user.username, message.from_user.first_name, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print("DB error:", e)
+    args = message.text.split()
+    referrer_id = None
+    if len(args) > 1 and args[1].startswith("ref"):
+        try:
+            referrer_id = int(args[1][3:])
+        except:
+            pass
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM users WHERE user_id=?", (message.from_user.id,))
+    exists = c.fetchone()
+    if not exists:
+        c.execute("""INSERT INTO users (user_id, username, first_name, balance, referrer_id, created_at)
+                     VALUES (?,?,?,0,?,?)""",
+                  (message.from_user.id, message.from_user.username, message.from_user.first_name,
+                   referrer_id if referrer_id and referrer_id != message.from_user.id else None,
+                   datetime.now().isoformat()))
+        # Бонус рефереру
+        if referrer_id and referrer_id != message.from_user.id:
+            c.execute("UPDATE users SET balance = balance + 20 WHERE user_id=?", (referrer_id,))
+            try:
+                await bot.send_message(referrer_id, f"🎉 По твоей ссылке зарегистрировался новый пользователь! +20 ₽ на баланс.")
+            except:
+                pass
+    else:
+        c.execute("UPDATE users SET username=?, first_name=? WHERE user_id=?",
+                  (message.from_user.username, message.from_user.first_name, message.from_user.id))
+    conn.commit()
+    conn.close()
 
     await message.answer(
         f"<b>Добро пожаловать в {BRAND}!</b>\n\n"
-        "Быстрый и стабильный VPN.\n"
-        "Открой приложение — там удобный интерфейс, ключи и QR.",
-        reply_markup=main_kb()
+        "Быстрый и стабильный VPN.\nОткрой приложение — там всё удобно.",
+        reply_markup=main_kb(message.from_user.id)
     )
 
 @dp.callback_query(F.data == "buy")
-async def cb_buy(callback: types.CallbackQuery):
-    kb = [[InlineKeyboardButton(text=f"{t['name']} — {t['price']} ₽", callback_data=f"t_{k}")] for k, t in TARIFFS.items()]
+async def cb_buy(callback: CallbackQuery):
+    kb = [[InlineKeyboardButton(text=f"{t['name']} — {t['price']} ₽", callback_data=f"t_{k}")]
+          for k, t in TARIFFS.items() if k != "trial"]
     kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back")])
     await callback.message.edit_text("Выбери тариф:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("t_"))
-async def cb_tariff(callback: types.CallbackQuery):
+async def cb_tariff(callback: CallbackQuery):
     key = callback.data[2:]
     t = TARIFFS[key]
     order_id = f"ord_{callback.from_user.id}_{uuid.uuid4().hex[:8]}"
@@ -173,14 +243,14 @@ async def cb_tariff(callback: types.CallbackQuery):
     await callback.answer()
 
 @dp.callback_query(F.data == "mysubs")
-async def cb_mysubs(callback: types.CallbackQuery):
+async def cb_mysubs(callback: CallbackQuery):
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT key_name, expires_at, tariff FROM subscriptions WHERE user_id=? ORDER BY id DESC", (callback.from_user.id,))
     rows = c.fetchall()
     conn.close()
     if not rows:
-        text = "Подписок пока нет.\nКупи первую в приложении."
+        text = "Подписок пока нет."
     else:
         text = "<b>Твои подписки:</b>\n\n"
         for name, exp, tar in rows:
@@ -191,36 +261,172 @@ async def cb_mysubs(callback: types.CallbackQuery):
     ]))
     await callback.answer()
 
-@dp.callback_query(F.data == "gift")
-async def cb_gift(callback: types.CallbackQuery):
+@dp.callback_query(F.data == "refs")
+async def cb_refs(callback: CallbackQuery):
+    ref_link = f"https://t.me/{(await bot.get_me()).username}?start=ref{callback.from_user.id}"
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users WHERE referrer_id=?", (callback.from_user.id,))
+    count = c.fetchone()[0]
+    conn.close()
     await callback.message.edit_text(
-        "Подарить удобнее в приложении — там можно выбрать друга по @username.",
+        f"<b>Реферальная программа</b>\n\n"
+        f"Приглашай друзей и получай <b>20 ₽</b> на баланс за каждого.\n\n"
+        f"Твоя ссылка:\n<code>{ref_link}</code>\n\n"
+        f"Приглашено: <b>{count}</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Открыть приложение", web_app=WebAppInfo(url=MINI_APP_URL))],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="back")]
         ])
     )
     await callback.answer()
 
 @dp.callback_query(F.data == "back")
-async def cb_back(callback: types.CallbackQuery):
-    await callback.message.edit_text(f"<b>{BRAND}</b>\nВыбери действие:", reply_markup=main_kb())
+async def cb_back(callback: CallbackQuery):
+    await callback.message.edit_text(f"<b>{BRAND}</b>\nВыбери действие:", reply_markup=main_kb(callback.from_user.id))
     await callback.answer()
 
-# ==================== LIFESPAN + APP ====================
+# ==================== ADMIN ====================
+@dp.callback_query(F.data == "admin")
+async def cb_admin(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        return await callback.answer("Нет доступа", show_alert=True)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="adm_stats")],
+        [InlineKeyboardButton(text="🎟 Создать промокод", callback_data="adm_promo")],
+        [InlineKeyboardButton(text="🎁 Выдать подписку", callback_data="adm_give")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="adm_broadcast")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back")],
+    ])
+    await callback.message.edit_text("<b>Админ-панель</b>", reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data == "adm_stats")
+async def adm_stats(callback: CallbackQuery):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    users = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM subscriptions")
+    subs = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM payments WHERE status='paid'")
+    pays = c.fetchone()[0]
+    c.execute("SELECT SUM(amount) FROM payments WHERE status='paid'")
+    total = c.fetchone()[0] or 0
+    conn.close()
+    await callback.message.edit_text(
+        f"<b>Статистика</b>\n\n"
+        f"Пользователей: <b>{users}</b>\n"
+        f"Подписок: <b>{subs}</b>\n"
+        f"Оплат: <b>{pays}</b>\n"
+        f"Сумма: <b>{total:.0f} ₽</b>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад", callback_data="admin")]])
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data == "adm_promo")
+async def adm_promo(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_promo)
+    await callback.message.edit_text(
+        "Отправь промокод в формате:\n<code>КОД СКИДКА% МАКС_ИСПОЛЬЗОВАНИЙ</code>\n\nПример: <code>OMNI20 20 100</code>"
+    )
+    await callback.answer()
+
+@dp.message(AdminStates.wait_promo)
+async def process_promo(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        parts = message.text.strip().split()
+        code = parts[0].upper()
+        discount = int(parts[1])
+        max_uses = int(parts[2])
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("INSERT OR REPLACE INTO promocodes (code, discount_percent, max_uses, used, active) VALUES (?,?,?,0,1)",
+                  (code, discount, max_uses))
+        conn.commit()
+        conn.close()
+        await message.answer(f"✅ Промокод <b>{code}</b> создан (скидка {discount}%, до {max_uses} исп.)")
+    except:
+        await message.answer("Ошибка формата. Пример: <code>OMNI20 20 100</code>")
+    await state.clear()
+
+@dp.callback_query(F.data == "adm_give")
+async def adm_give(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_give_sub)
+    await callback.message.edit_text("Отправь: <code>USER_ID ТАРИФ</code>\nПример: <code>123456789 1m</code>\nТарифы: trial, 1m, 3m, 6m, 12m")
+    await callback.answer()
+
+@dp.message(AdminStates.wait_give_sub)
+async def process_give(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        parts = message.text.strip().split()
+        uid = int(parts[0])
+        tariff_key = parts[1]
+        if tariff_key not in TARIFFS:
+            await message.answer("Неверный тариф")
+            await state.clear()
+            return
+        t = TARIFFS[tariff_key]
+        key_name = f"adm_{uid}_{uuid.uuid4().hex[:6]}"
+        result = await h1_create_client(key_name, t["days"], t.get("traffic_gb", 0), t.get("devices", 0))
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
+        expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at)
+                     VALUES (?,?,?,?,?,?)""", (uid, key_name, config, tariff_key, expires, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+        await bot.send_message(uid, f"<b>Вам выдана подписка!</b>\n\nТариф: {t['name']}\n<code>{config}</code>")
+        await message.answer(f"✅ Подписка {tariff_key} выдана пользователю {uid}")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+    await state.clear()
+
+@dp.callback_query(F.data == "adm_broadcast")
+async def adm_broadcast(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_broadcast)
+    await callback.message.edit_text("Отправь текст рассылки:")
+    await callback.answer()
+
+@dp.message(AdminStates.wait_broadcast)
+async def process_broadcast(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM users")
+    users = [r[0] for r in c.fetchall()]
+    conn.close()
+    ok = 0
+    for uid in users:
+        try:
+            await bot.send_message(uid, message.text)
+            ok += 1
+        except:
+            pass
+    await message.answer(f"✅ Рассылка завершена. Доставлено: {ok}/{len(users)}")
+    await state.clear()
+
+# ==================== LIFESPAN ====================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Удаляем старый webhook и ставим правильный
     await bot.delete_webhook(drop_pending_updates=True)
-    await bot.set_webhook(
-        url=WEBHOOK_URL,
-        allowed_updates=dp.resolve_used_update_types(),
-        drop_pending_updates=True
-    )
+    await bot.set_webhook(url=WEBHOOK_URL, allowed_updates=dp.resolve_used_update_types(), drop_pending_updates=True)
     print(f"Webhook set: {WEBHOOK_URL}")
     yield
-    await bot.delete_webhook()
     await bot.session.close()
 
 app = FastAPI(lifespan=lifespan)
@@ -237,72 +443,167 @@ async def telegram_webhook(request: Request):
 async def root():
     return FileResponse("index.html")
 
+# ==================== API ====================
 @app.get("/api/me")
 async def api_me(user_id: int):
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT username, first_name, created_at FROM users WHERE user_id=?", (user_id,))
+    c.execute("SELECT username, first_name, balance, trial_used, created_at FROM users WHERE user_id=?", (user_id,))
     u = c.fetchone()
+    if not u:
+        # авто-регистрация
+        c.execute("INSERT INTO users (user_id, balance, created_at) VALUES (?,0,?)", (user_id, datetime.now().isoformat()))
+        conn.commit()
+        u = (None, None, 0, 0, datetime.now().isoformat())
     c.execute("SELECT id, key_name, config, tariff, expires_at, is_gift FROM subscriptions WHERE user_id=? ORDER BY id DESC", (user_id,))
     subs = c.fetchall()
+    c.execute("SELECT COUNT(*) FROM users WHERE referrer_id=?", (user_id,))
+    refs = c.fetchone()[0]
     conn.close()
     return {
         "user_id": user_id,
-        "username": u[0] if u else None,
-        "first_name": u[1] if u else None,
-        "created_at": u[2] if u else None,
+        "username": u[0],
+        "first_name": u[1],
+        "balance": u[2] or 0,
+        "trial_used": bool(u[3]),
+        "created_at": u[4],
+        "refs_count": refs,
         "subscriptions": [{
             "id": s[0], "key_name": s[1], "config": s[2], "tariff": s[3],
             "tariff_name": TARIFFS.get(s[3], {}).get("name", s[3]),
             "expires_at": s[4], "is_gift": bool(s[5])
         } for s in subs],
-        "tariffs": TARIFFS
+        "tariffs": {k: v for k, v in TARIFFS.items() if k != "trial"}
     }
 
 @app.post("/api/create_payment")
 async def api_create_payment(data: dict):
     user_id = int(data["user_id"])
-    tariff_key = data["tariff"]
+    tariff_key = data.get("tariff")
+    amount = data.get("amount")  # для пополнения
     promo = (data.get("promo") or "").upper().strip()
     is_gift = bool(data.get("is_gift"))
     gift_to = (data.get("gift_to") or "").lstrip("@").lower()
+    is_topup = bool(data.get("is_topup"))
 
-    if tariff_key not in TARIFFS:
-        raise HTTPException(400, "Неверный тариф")
-    t = TARIFFS[tariff_key]
-    price = t["price"]
+    if is_topup:
+        price = float(amount)
+        tariff_key = "topup"
+        desc = f"{BRAND} — Пополнение {price} ₽"
+    else:
+        if tariff_key not in TARIFFS:
+            raise HTTPException(400, "Неверный тариф")
+        t = TARIFFS[tariff_key]
+        price = t["price"]
+        desc = f"{BRAND} — {t['name']}"
 
-    if promo:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code=?", (promo,))
-        row = c.fetchone()
-        if row and row[3] and row[2] < row[1]:
-            price = max(1, int(price * (100 - row[0]) / 100))
-            c.execute("UPDATE promocodes SET used=used+1 WHERE code=?", (promo,))
-            conn.commit()
-        conn.close()
+        if promo:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code=?", (promo,))
+            row = c.fetchone()
+            if row and row[3] and row[2] < row[1]:
+                price = max(1, int(price * (100 - row[0]) / 100))
+                c.execute("UPDATE promocodes SET used=used+1 WHERE code=?", (promo,))
+                conn.commit()
+            conn.close()
 
-    if is_gift and gift_to:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM users WHERE lower(username)=?", (gift_to,))
-        row = c.fetchone()
-        conn.close()
-        if not row:
-            raise HTTPException(400, "Пользователь не найден. Он должен сначала написать /start боту.")
+        if is_gift and gift_to:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM users WHERE lower(username)=?", (gift_to,))
+            if not c.fetchone():
+                conn.close()
+                raise HTTPException(400, "Пользователь не найден")
+            conn.close()
 
     order_id = f"ord_{user_id}_{uuid.uuid4().hex[:8]}"
     conn = get_db()
     c = conn.cursor()
-    c.execute("""INSERT INTO payments (order_id,user_id,amount,tariff,status,created_at,is_gift,gift_to_username)
-                 VALUES (?,?,?,?,?,?,?,?)""",
-              (order_id, user_id, price, tariff_key, "created", datetime.now().isoformat(), int(is_gift), gift_to or None))
+    c.execute("""INSERT INTO payments (order_id,user_id,amount,tariff,status,created_at,is_gift,gift_to_username,is_topup)
+                 VALUES (?,?,?,?,?,?,?,?,?)""",
+              (order_id, user_id, price, tariff_key, "created", datetime.now().isoformat(),
+               int(is_gift), gift_to or None, int(is_topup)))
     conn.commit()
     conn.close()
 
-    pay = await create_payment(order_id, price, f"{BRAND} — {t['name']}", user_id)
+    pay = await create_payment(order_id, price, desc, user_id)
     return {"pay_url": pay["pay_url"], "order_id": order_id, "amount": price}
+
+@app.post("/api/trial")
+async def api_trial(data: dict):
+    user_id = int(data["user_id"])
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT trial_used FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    if not row:
+        c.execute("INSERT INTO users (user_id, balance, created_at) VALUES (?,0,?)", (user_id, datetime.now().isoformat()))
+        conn.commit()
+        row = (0,)
+    if row[0]:
+        conn.close()
+        raise HTTPException(400, "Пробный период уже использован")
+
+    t = TARIFFS["trial"]
+    key_name = f"trial_{user_id}_{uuid.uuid4().hex[:5]}"
+    try:
+        result = await h1_create_client(key_name, t["days"], t["traffic_gb"], t["devices"])
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
+    except Exception as e:
+        conn.close()
+        raise HTTPException(500, f"Ошибка создания ключа: {e}")
+
+    expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
+    c.execute("UPDATE users SET trial_used=1 WHERE user_id=?", (user_id,))
+    c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at)
+                 VALUES (?,?,?,?,?,?)""", (user_id, key_name, config, "trial", expires, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+    try:
+        await bot.send_message(user_id, f"<b>Пробный период активирован!</b>\n\n1 день · 10 ГБ · 1 устройство\n\n<code>{config}</code>")
+    except:
+        pass
+    return {"ok": True, "config": config, "expires_at": expires}
+
+@app.post("/api/buy_balance")
+async def api_buy_balance(data: dict):
+    """Покупка тарифа с баланса"""
+    user_id = int(data["user_id"])
+    tariff_key = data["tariff"]
+    if tariff_key not in TARIFFS or tariff_key == "trial":
+        raise HTTPException(400, "Неверный тариф")
+    t = TARIFFS[tariff_key]
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT balance FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    balance = row[0] if row else 0
+    if balance < t["price"]:
+        conn.close()
+        raise HTTPException(400, "Недостаточно средств")
+    c.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (t["price"], user_id))
+    
+    key_name = f"u{user_id}_{uuid.uuid4().hex[:6]}"
+    try:
+        result = await h1_create_client(key_name, t["days"], t.get("traffic_gb", 0), t.get("devices", 0))
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        raise HTTPException(500, str(e))
+
+    expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
+    c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at)
+                 VALUES (?,?,?,?,?,?)""", (user_id, key_name, config, tariff_key, expires, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    try:
+        await bot.send_message(user_id, f"<b>Подписка куплена с баланса!</b>\n\n{t['name']}\n<code>{config}</code>")
+    except:
+        pass
+    return {"ok": True, "config": config}
 
 @app.post("/api/delete_sub")
 async def api_delete_sub(data: dict):
@@ -314,7 +615,7 @@ async def api_delete_sub(data: dict):
     row = c.fetchone()
     if not row:
         conn.close()
-        raise HTTPException(404, "Не найдено")
+        raise HTTPException(404)
     key_name = row[0]
     c.execute("DELETE FROM subscriptions WHERE id=?", (sub_id,))
     conn.commit()
@@ -331,8 +632,8 @@ async def api_renew(data: dict):
     c.execute("SELECT tariff FROM subscriptions WHERE id=? AND user_id=?", (sub_id, user_id))
     row = c.fetchone()
     conn.close()
-    if not row:
-        raise HTTPException(404, "Не найдено")
+    if not row or row[0] == "trial":
+        raise HTTPException(400, "Нельзя продлить")
     return await api_create_payment({"user_id": user_id, "tariff": row[0]})
 
 @app.get("/api/check_user")
@@ -347,6 +648,11 @@ async def api_check_user(username: str):
         return {"exists": True, "user_id": row[0], "first_name": row[1]}
     return {"exists": False}
 
+@app.get("/api/ref_link")
+async def api_ref_link(user_id: int):
+    me = await bot.get_me()
+    return {"link": f"https://t.me/{me.username}?start=ref{user_id}"}
+
 @app.post("/webhook/rollypay")
 async def webhook_rollypay(request: Request, x_signature: str = Header(None), x_timestamp: str = Header(None)):
     body = await request.body()
@@ -359,14 +665,26 @@ async def webhook_rollypay(request: Request, x_signature: str = Header(None), x_
     order_id = data.get("order_id")
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT user_id, tariff, status, is_gift, gift_to_username FROM payments WHERE order_id=?", (order_id,))
+    c.execute("SELECT user_id, tariff, status, is_gift, gift_to_username, is_topup, amount FROM payments WHERE order_id=?", (order_id,))
     row = c.fetchone()
     if not row or row[2] == "paid":
         conn.close()
         return {"ok": True}
 
-    user_id, tariff_key, _, is_gift, gift_to = row
-    t = TARIFFS[tariff_key]
+    user_id, tariff_key, _, is_gift, gift_to, is_topup, amount = row
+
+    if is_topup:
+        c.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amount, user_id))
+        c.execute("UPDATE payments SET status='paid', payment_id=? WHERE order_id=?", (data.get("payment_id"), order_id))
+        conn.commit()
+        conn.close()
+        try:
+            await bot.send_message(user_id, f"✅ Баланс пополнен на <b>{amount:.0f} ₽</b>")
+        except:
+            pass
+        return {"ok": True}
+
+    t = TARIFFS.get(tariff_key, TARIFFS["1m"])
     target_id = user_id
     if is_gift and gift_to:
         c.execute("SELECT user_id FROM users WHERE lower(username)=?", (gift_to.lower(),))
@@ -376,29 +694,27 @@ async def webhook_rollypay(request: Request, x_signature: str = Header(None), x_
 
     key_name = f"u{target_id}_{uuid.uuid4().hex[:6]}"
     try:
-        result = await h1_create_client(key_name, t["days"])
-        config = (result.get("config") or result.get("link") or result.get("vless") or
-                  result.get("uri") or result.get("client", {}).get("config") or str(result))
+        result = await h1_create_client(key_name, t["days"], t.get("traffic_gb", 0), t.get("devices", 0))
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
     except Exception as e:
-        config = f"Ошибка создания: {e}"
+        config = f"Ошибка: {e}"
         key_name = "error"
 
     expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
     c.execute("UPDATE payments SET status='paid', payment_id=? WHERE order_id=?", (data.get("payment_id"), order_id))
-    c.execute("""INSERT INTO subscriptions (user_id,key_name,config,tariff,expires_at,created_at,is_gift,gifted_from)
+    c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at, is_gift, gifted_from)
                  VALUES (?,?,?,?,?,?,?,?)""",
               (target_id, key_name, config, tariff_key, expires, datetime.now().isoformat(), int(is_gift), user_id if is_gift else None))
     conn.commit()
     conn.close()
 
     try:
-        text = (f"<b>Оплата прошла!</b>\n\nТариф: <b>{t['name']}</b>\nКлюч: <code>{key_name}</code>\n\n"
-                f"<b>Конфиг:</b>\n<code>{config}</code>\n\nДо: {expires[:10]}")
+        text = f"<b>Оплата прошла!</b>\n\nТариф: <b>{t['name']}</b>\n<code>{config}</code>\n\nДо: {expires[:10]}"
         await bot.send_message(target_id, text)
         if is_gift and target_id != user_id:
-            await bot.send_message(user_id, f"Ты подарил подписку @{gift_to}!")
-    except Exception as e:
-        print("Notify error:", e)
+            await bot.send_message(user_id, f"🎁 Ты подарил подписку @{gift_to}!")
+    except:
+        pass
     return {"ok": True}
 
 if __name__ == "__main__":
