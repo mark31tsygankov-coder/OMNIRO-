@@ -229,6 +229,9 @@ async def process_paid_order(order_id):
     await ex("UPDATE orders SET status='paid', paid_at=? WHERE order_id=?", int(time.time()), order_id)
     target_id = o["target_id"] or o["user_id"]
     await upsert_user(target_id, None)
+    
+    is_gift = (o["target_id"] and o["target_id"] != o["user_id"])
+    
     try:
         new_exp, link = await grant(target_id, o["days"])
         b = InlineKeyboardBuilder()
@@ -237,8 +240,23 @@ async def process_paid_order(order_id):
         b.button(text="📦 Мои подписки", callback_data="my_subs")
         b.button(text="⬅️ Главное меню", callback_data="menu")
         b.adjust(1)
-        text = f"✅ <b>Оплата успешна!</b>\nПодписка активна до <b>{time.strftime('%d.%m.%Y', time.gmtime(new_exp))}</b>\n\nВаш ключ подключения:\n<code>{esc(link)}</code>"
-        await bot.send_message(target_id, text, reply_markup=b.as_markup())
+        
+        if is_gift:
+            # Уведомление получателю
+            gift_text = f"🎁 <b>Вам подарили подписку VPN!</b>\nДействует до: <b>{time.strftime('%d.%m.%Y', time.gmtime(new_exp))}</b>\n\nКлюч:\n<code>{esc(link)}</code>"
+            try:
+                await bot.send_message(target_id, gift_text, reply_markup=b.as_markup())
+            except Exception:
+                pass
+            # Уведомление дарителю
+            buyer_text = f"✅ <b>Подарок успешно отправлен!</b>\nПользователь <code>{target_id}</code> получил подписку."
+            try:
+                await bot.send_message(o["user_id"], buyer_text, reply_markup=main_kb(o["user_id"]))
+            except Exception:
+                pass
+        else:
+            text = f"✅ <b>Оплата успешна!</b>\nПодписка активна до <b>{time.strftime('%d.%m.%Y', time.gmtime(new_exp))}</b>\n\nВаш ключ подключения:\n<code>{esc(link)}</code>"
+            await bot.send_message(target_id, text, reply_markup=b.as_markup())
     except Exception as e:
         log.error("Grant error: %s", e)
 
@@ -250,21 +268,28 @@ async def web_app_data_handler(m: Message):
         if action == "buy_plan":
             key = data.get("plan")
             price = data.get("price")
+            mode = data.get("mode", "self")
+            target_id = int(data.get("target_id")) if data.get("target_id") else m.from_user.id
+            
             if key in PLANS:
                 name, days, _ = PLANS[key]
                 uid = m.from_user.id
                 order_id = f"o{uid}_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
                 me = (await bot.me()).username
-                p = await rp_create_payment(order_id, price, f"{BRAND}: {name}", uid, me)
+                
+                desc = f"{BRAND} (Подарок): {name}" if mode == "gift" else f"{BRAND}: {name}"
+                p = await rp_create_payment(order_id, price, desc, uid, me)
+                
                 await ex(
                     "INSERT INTO orders(order_id,user_id,target_id,plan,days,amount,payment_id,pay_url,status,created) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    order_id, uid, uid, key, days, price, p["payment_id"], p["pay_url"], "pending", int(time.time()),
+                    order_id, uid, target_id, key, days, price, p["payment_id"], p["pay_url"], "pending", int(time.time()),
                 )
+                
                 kb = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=f"💳 Оплатить {price} ₽", url=p["pay_url"])],
                     [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"chk:{order_id}")]
                 ])
-                await m.answer(f"🧾 Сформирован заказ:\nТариф: <b>{name}</b>\nСумма: <b>{price} ₽</b>", reply_markup=kb)
+                await m.answer(f"🧾 Сформирован заказ{' на подарок' if mode=='gift' else ''}:\nТариф: <b>{name}</b>\nСумма: <b>{price} ₽</b>", reply_markup=kb)
         elif action == "open_my_subs":
             u = await get_user(m.from_user.id)
             now = int(time.time())
