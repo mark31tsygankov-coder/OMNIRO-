@@ -3,20 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>OMNIRO VPN Mini App</title>
+  <title>OMNIRO VPN</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
       --bg-color: #000000;
-      --card-bg: #0d0d0d;
-      --border-color: #222222;
+      --card-bg: #0c0c0c;
+      --border-color: #262626;
       --text-main: #ffffff;
       --text-muted: #888888;
-      --accent-white: #ffffff;
+      --accent: #ffffff;
+      --radius: 16px;
     }
 
     * {
       box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
     body {
@@ -24,195 +26,351 @@
       padding: 16px;
       background-color: var(--bg-color);
       color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
     .container {
-      max-width: 420px;
+      max-width: 440px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
+      padding-bottom: 30px;
     }
 
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .brand {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      color: var(--accent-white);
-    }
-
-    .badge {
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 4px;
+      padding: 14px 16px;
+      background: var(--card-bg);
       border: 1px solid var(--border-color);
-      background-color: #111111;
+      border-radius: var(--radius);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .user-badge {
+      font-size: 11px;
       color: var(--text-muted);
-      font-family: monospace;
+      background: #141414;
+      padding: 4px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
     }
 
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: var(--radius);
       padding: 16px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
     }
 
-    .status-title {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 6px;
-    }
-
-    .status-value {
-      font-size: 18px;
+    .welcome-title {
+      font-size: 17px;
       font-weight: 700;
-      color: var(--accent-white);
+      margin-bottom: 4px;
     }
 
-    .sub-link-box {
+    .welcome-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
       margin-top: 12px;
-      background: #000000;
-      border: 1px dashed var(--border-color);
-      padding: 10px;
-      border-radius: 8px;
-      word-break: break-all;
-      font-family: monospace;
+    }
+
+    .stat-box {
+      background: #050505;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 4px;
+      color: var(--accent);
+    }
+
+    .section-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin: 4px 0 2px 4px;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .btn-plan {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 14px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-plan:active, .btn-plan.selected {
+      background: #ffffff;
+      color: #000000;
+      border-color: #ffffff;
+    }
+    .btn-plan:active .plan-price, .btn-plan.selected .plan-price {
+      color: #000000;
+    }
+    .btn-plan:active .plan-name, .btn-plan.selected .plan-name {
+      color: #444444;
+    }
+
+    .plan-name {
       font-size: 11px;
       color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .plan-price {
+      font-size: 15px;
+      font-weight: 800;
+      margin-top: 6px;
+      color: var(--accent);
     }
 
     .btn {
       width: 100%;
-      padding: 14px;
-      border-radius: 8px;
-      border: 1px solid var(--accent-white);
-      background-color: var(--accent-white);
+      padding: 15px;
+      border-radius: var(--radius);
+      border: none;
+      background-color: #ffffff;
       color: #000000;
       font-weight: 700;
       font-size: 13px;
       cursor: pointer;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.2s, transform 0.1s;
     }
 
     .btn:active {
-      opacity: 0.8;
+      opacity: 0.85;
       transform: scale(0.98);
     }
 
     .btn-outline {
       background-color: transparent;
-      color: var(--accent-white);
+      color: var(--accent);
       border: 1px solid var(--border-color);
     }
 
-    .btn-outline:active {
-      border-color: var(--accent-white);
-    }
-
-    .grid {
+    .menu-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
     }
 
-    .plan-card {
+    .result-box {
+      display: flex;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 12px 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s;
+      border-radius: var(--radius);
+      padding: 16px;
+      flex-direction: column;
+      gap: 12px;
     }
 
-    .plan-card:hover, .plan-card:active {
-      border-color: var(--accent-white);
-    }
-
-    .plan-title {
-      font-size: 12px;
-      font-weight: 600;
+    .link-field {
+      background: #000000;
+      border: 1px dashed var(--border-color);
+      padding: 12px;
+      border-radius: 12px;
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 11px;
       color: var(--text-muted);
     }
 
-    .plan-price {
-      font-size: 16px;
-      font-weight: 800;
-      color: var(--accent-white);
-      margin-top: 4px;
+    .qr-container {
+      text-align: center;
+      padding: 10px;
+      background: #ffffff;
+      border-radius: 12px;
+      display: inline-block;
+      margin: 0 auto;
+    }
+    .qr-container img {
+      width: 140px;
+      height: 140px;
+      display: block;
     }
   </style>
 </head>
 <body>
 
-  <div class="container">
+  <div class="container" id="main-view">
     <div class="header">
-      <div class="brand">OMNIRO VPN</div>
-      <div class="badge" id="user-id">ID: ---</div>
+      <div class="brand-title">OMNIRO VPN</div>
+      <div class="user-badge" id="user-id-badge">ID: ...</div>
     </div>
 
     <div class="card">
-      <div class="status-title">Статус подключения</div>
-      <div class="status-value" id="sub-status">Активна в Telegram</div>
+      <div class="welcome-title">Добро пожаловать! 👋</div>
+      <div class="welcome-sub">Быстрый, безопасный и анонимный VPN без ограничений.</div>
       
-      <div class="sub-link-box" id="sub-link">
-        Выберите тариф ниже или управляйте подпиской
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Баланс</div>
+          <div class="stat-value" id="user-balance">0 ₽</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Статус</div>
+          <div class="stat-value" id="user-sub-status">Активен</div>
+        </div>
       </div>
     </div>
 
-    <div class="status-title" style="margin-top: 4px;">Выберите тариф</div>
-    
-    <div class="grid">
-      <div class="plan-card" onclick="selectPlan('m1', 79)">
-        <div class="plan-title">1 Месяц</div>
+    <div class="section-title">Тарифные планы</div>
+    <div class="btn-grid">
+      <div class="btn-plan" onclick="selectPlan('m1', 79, this)">
+        <div class="plan-name">1 Месяц</div>
         <div class="plan-price">79 ₽</div>
       </div>
-      <div class="plan-card" onclick="selectPlan('m3', 219)">
-        <div class="plan-title">3 Месяца</div>
+      <div class="btn-plan" onclick="selectPlan('m3', 219, this)">
+        <div class="plan-name">3 Месяца</div>
         <div class="plan-price">219 ₽</div>
       </div>
-      <div class="plan-card" onclick="selectPlan('m6', 399)">
-        <div class="plan-title">6 Месяцев</div>
+      <div class="btn-plan" onclick="selectPlan('m6', 399, this)">
+        <div class="plan-name">6 Месяцев</div>
         <div class="plan-price">399 ₽</div>
       </div>
     </div>
 
-    <button class="btn btn-outline" onclick="openSupport()">💬 Служба поддержки</button>
+    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">💳 Оплатить</button>
+
+    <div class="section-title">Меню управления</div>
+    <div class="menu-grid">
+      <button class="btn btn-outline" onclick="openMySubs()">📦 Мои подписки</button>
+      <button class="btn btn-outline" onclick="openPromos()">🎟 Промокоды</button>
+      <button class="btn btn-outline" onclick="openReferrals()">👥 Рефералы</button>
+      <button class="btn btn-outline" onclick="openSupport()">🆘 Поддержка</button>
+    </div>
+  </div>
+
+  <div class="container" id="result-view" style="display: none;">
+    <div class="header">
+      <div class="brand-title">Ваш VPN Ключ</div>
+      <div class="user-badge" onclick="backToMain()" style="cursor: pointer;">✕ Закрыть</div>
+    </div>
+
+    <div class="result-box">
+      <div class="welcome-sub">Оплата прошла успешно! Скопируйте ключ или отсканируйте QR-код.</div>
+      
+      <div class="qr-container">
+        <img id="qr-img" src="" alt="QR Code">
+      </div>
+
+      <div class="section-title">Ключ подключения</div>
+      <div class="link-field" id="vpn-link-text">vless://...</div>
+
+      <button class="btn" onclick="copyKey()">📋 Скопировать ключ</button>
+      <button class="btn btn-outline" onclick="openInApp()">➕ Открыть в приложении</button>
+    </div>
   </div>
 
   <script>
     const tg = window.Telegram.WebApp;
     tg.expand();
 
+    let selectedPlanKey = 'm1';
+    let selectedPrice = 79;
+    let activeVpnLink = '';
+
     const user = tg.initDataUnsafe?.user;
     if (user) {
-      document.getElementById('user-id').innerText = `ID: ${user.id}`;
+      document.getElementById('user-id-badge').innerText = `ID: ${user.id}`;
     }
 
-    function selectPlan(planKey, price) {
+    function selectPlan(key, price, element) {
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+      selectedPlanKey = key;
+      selectedPrice = price;
+      
+      document.querySelectorAll('.btn-plan').forEach(el => el.classList.remove('selected'));
+      element.classList.add('selected');
+      document.getElementById('pay-btn').innerText = `💳 Оплатить ${price} ₽`;
+    }
+
+    document.querySelector('.btn-plan').classList.add('selected');
+
+    function proceedToPay() {
       if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-      tg.sendData(JSON.stringify({ action: 'buy_plan', plan: planKey, price: price }));
+      tg.sendData(JSON.stringify({ action: 'buy_plan', plan: selectedPlanKey, price: selectedPrice }));
+    }
+
+    function openMySubs() {
+      tg.sendData(JSON.stringify({ action: 'open_my_subs' }));
+    }
+
+    function openPromos() {
+      tg.sendData(JSON.stringify({ action: 'open_promos' }));
+    }
+
+    function openReferrals() {
+      tg.sendData(JSON.stringify({ action: 'open_referrals' }));
     }
 
     function openSupport() {
       tg.sendData(JSON.stringify({ action: 'open_support' }));
+    }
+
+    function showSuccessKey(link) {
+      activeVpnLink = link;
+      document.getElementById('main-view').style.display = 'none';
+      document.getElementById('result-view').style.display = 'flex';
+      document.getElementById('vpn-link-text').innerText = link;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(link)}`;
+      document.getElementById('qr-img').src = qrUrl;
+    }
+
+    function backToMain() {
+      document.getElementById('result-view').style.display = 'none';
+      document.getElementById('main-view').style.display = 'flex';
+    }
+
+    function copyKey() {
+      navigator.clipboard.writeText(activeVpnLink);
+      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      tg.showAlert("Ключ скопирован в буфер обмена!");
+    }
+
+    function openInApp() {
+      window.open(activeVpnLink, '_blank');
     }
   </script>
 </body>
