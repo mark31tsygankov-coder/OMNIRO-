@@ -1,449 +1,351 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>VPN Service</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    :root {
-      --bg-color: #000000;
-      --card-bg: #0c0c0c;
-      --card-hover: #141414;
-      --border-color: #222222;
-      --border-active: #ffffff;
-      --text-main: #ffffff;
-      --text-muted: #777777;
-      --accent: #ffffff;
-      --radius: 18px;
-      --radius-sm: 12px;
-    }
-
-    * {
-      box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    body {
-      margin: 0;
-      padding: 16px;
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      -webkit-font-smoothing: antialiased;
-    }
-
-    .container {
-      max-width: 440px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding-bottom: 40px;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius);
-    }
-
-    .brand-title {
-      font-size: 16px;
-      font-weight: 800;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
-
-    .user-badge {
-      font-size: 11px;
-      color: var(--text-muted);
-      background: #141414;
-      padding: 6px 10px;
-      border-radius: 10px;
-      border: 1px solid var(--border-color);
-      font-family: monospace;
-    }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius);
-      padding: 20px;
-    }
-
-    .welcome-title {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    .welcome-sub {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.4;
-    }
-
-    .mode-switch {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      background: #050505;
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-sm);
-      padding: 4px;
-      margin-top: 14px;
-    }
-
-    .mode-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 12px;
-      font-weight: 700;
-      padding: 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .mode-btn.active {
-      background: #ffffff;
-      color: #000000;
-    }
-
-    .gift-box {
-      display: none;
-      margin-top: 12px;
-    }
-
-    input {
-      width: 100%;
-      background: #050505;
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-sm);
-      padding: 14px 16px;
-      color: #ffffff;
-      font-size: 13px;
-      outline: none;
-    }
-    input:focus {
-      border-color: var(--border-active);
-    }
-
-    .section-title {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: var(--text-muted);
-      margin: 4px 0 2px 4px;
-      font-weight: 700;
-    }
-
-    .btn-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-    }
-
-    .btn-plan {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius);
-      padding: 16px 10px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .btn-plan.selected {
-      background: #ffffff;
-      color: #000000;
-      border-color: #ffffff;
-    }
-
-    .btn-plan.selected .plan-price {
-      color: #000000;
-    }
-
-    .btn-plan.selected .plan-name {
-      color: #555555;
-    }
-
-    .plan-name {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-weight: 600;
-    }
-
-    .plan-price {
-      font-size: 16px;
-      font-weight: 800;
-      margin-top: 6px;
-      color: var(--accent);
-    }
-
-    .btn {
-      width: 100%;
-      padding: 16px;
-      border-radius: var(--radius);
-      border: none;
-      background-color: #ffffff;
-      color: #000000;
-      font-weight: 800;
-      font-size: 13px;
-      cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .btn:active {
-      opacity: 0.85;
-      transform: scale(0.98);
-    }
-
-    .btn-outline {
-      background-color: var(--card-bg);
-      color: var(--accent);
-      border: 1px solid var(--border-color);
-    }
-
-    .menu-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .result-box {
-      display: flex;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius);
-      padding: 20px;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .link-field {
-      background: #050505;
-      border: 1px dashed var(--border-color);
-      padding: 14px;
-      border-radius: var(--radius-sm);
-      word-break: break-all;
-      font-family: monospace;
-      font-size: 11px;
-      color: var(--text-muted);
-      max-height: 90px;
-      overflow-y: auto;
-    }
-
-    .qr-container {
-      text-align: center;
-      padding: 14px;
-      background: #ffffff;
-      border-radius: var(--radius-sm);
-      display: inline-block;
-      margin: 0 auto;
-    }
-    .qr-container img {
-      width: 150px;
-      height: 150px;
-      display: block;
-    }
-
-    .hidden {
-      display: none !important;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OMNIRO VPN</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg: #f5f7fa;
+            --card: #ffffff;
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --text: #1e293b;
+            --muted: #64748b;
+            --success: #10b981;
+            --radius: 18px;
+            --shadow: 0 4px 20px rgba(0,0,0,0.06);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding-bottom: 40px;
+        }
+        .header {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            padding: 28px 20px 40px;
+            border-radius: 0 0 28px 28px;
+            text-align: center;
+        }
+        .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+        .header p { opacity: 0.9; font-size: 15px; }
+        .container { padding: 0 16px; margin-top: -24px; }
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+        }
+        .card-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            text-decoration: none;
+            color: white;
+            background: var(--primary);
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+        .btn-success { background: linear-gradient(135deg, #10b981, #059669); }
+        .btn-outline {
+            background: white;
+            color: var(--primary);
+            border: 2px solid #e2e8f0;
+        }
+        .tariff-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .tariff {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 16px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tariff.active {
+            border-color: var(--primary);
+            background: #eff6ff;
+        }
+        .tariff .name { font-weight: 600; font-size: 15px; }
+        .tariff .price { font-size: 20px; font-weight: 700; color: var(--primary); margin: 6px 0; }
+        .tariff .days { font-size: 13px; color: var(--muted); }
+        .input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 14px;
+            font-size: 16px;
+            margin-bottom: 12px;
+            outline: none;
+        }
+        .input:focus { border-color: var(--primary); }
+        .sub-item {
+            background: #f8fafc;
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+        .sub-item .key { font-family: monospace; font-size: 13px; word-break: break-all; }
+        .badge {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .hidden { display: none !important; }
+        .tab-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .tab {
+            flex-shrink: 0;
+            padding: 10px 18px;
+            border-radius: 12px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .tab.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .success-msg {
+            background: #ecfdf5;
+            color: #065f46;
+            padding: 16px;
+            border-radius: 14px;
+            text-align: center;
+            margin-bottom: 16px;
+            font-weight: 500;
+        }
+    </style>
 </head>
 <body>
-
-  <div class="container" id="main-view">
     <div class="header">
-      <div class="brand-title">VPN Service</div>
-      <div class="user-badge" id="user-id-badge">ID: ...</div>
+        <h1>OMNIRO VPN</h1>
+        <p>Быстрый • Стабильный • Анонимный</p>
     </div>
 
-    <div class="card">
-      <div class="welcome-title">Быстрый доступ</div>
-      <div class="welcome-sub">Выберите тариф и оформите подписку.</div>
-      
-      <div class="mode-switch">
-        <button class="mode-btn active" id="mode-self" onclick="setMode('self')">Себе</button>
-        <button class="mode-btn" id="mode-gift" onclick="setMode('gift')">В подарок</button>
-      </div>
+    <div class="container">
+        <div id="paid-success" class="success-msg hidden">
+            ✅ Оплата прошла! Ключ отправлен в бот.
+        </div>
 
-      <div class="gift-box" id="gift-input-box">
-        <input type="number" id="gift-target-id" placeholder="Введите Telegram ID друга">
-      </div>
+        <div class="tab-bar">
+            <div class="tab active" data-tab="buy">Купить</div>
+            <div class="tab" data-tab="subs">Мои подписки</div>
+            <div class="tab" data-tab="gift">Подарить</div>
+            <div class="tab" data-tab="promo">Промокод</div>
+        </div>
+
+        <!-- BUY -->
+        <div id="tab-buy" class="card">
+            <div class="card-title">📦 Выбери тариф</div>
+            <div class="tariff-grid" id="tariffs"></div>
+            <div style="margin-top: 16px;">
+                <input class="input" id="promo-input" placeholder="Промокод (если есть)">
+                <button class="btn btn-primary" id="btn-pay">Оплатить</button>
+            </div>
+        </div>
+
+        <!-- SUBS -->
+        <div id="tab-subs" class="card hidden">
+            <div class="card-title">🔑 Мои подписки</div>
+            <div id="subs-list">Загрузка...</div>
+        </div>
+
+        <!-- GIFT -->
+        <div id="tab-gift" class="card hidden">
+            <div class="card-title">🎁 Подарить подписку</div>
+            <input class="input" id="gift-username" placeholder="@username друга">
+            <div class="tariff-grid" id="gift-tariffs"></div>
+            <button class="btn btn-success" id="btn-gift" style="margin-top: 16px;">Подарить</button>
+        </div>
+
+        <!-- PROMO -->
+        <div id="tab-promo" class="card hidden">
+            <div class="card-title">🏷 Промокод</div>
+            <input class="input" id="promo-check" placeholder="Введи промокод">
+            <button class="btn btn-outline" id="btn-check-promo">Проверить</button>
+            <div id="promo-result" style="margin-top: 12px; text-align: center;"></div>
+        </div>
+
+        <!-- SUPPORT -->
+        <div class="card" style="text-align: center;">
+            <div class="card-title" style="justify-content: center;">💬 Поддержка</div>
+            <a class="btn btn-outline" id="support-btn" href="#">Написать в поддержку</a>
+            <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
+                <a href="#" id="policy" style="color: var(--muted);">Политика</a> · 
+                <a href="#" id="offer" style="color: var(--muted);">Оферта</a>
+            </div>
+        </div>
     </div>
 
-    <div class="section-title">Тарифные планы</div>
-    <div class="btn-grid">
-      <div class="btn-plan selected" onclick="selectPlan('m1', 79, this)">
-        <div class="plan-name">1 Месяц</div>
-        <div class="plan-price">79 руб</div>
-      </div>
-      <div class="btn-plan" onclick="selectPlan('m3', 219, this)">
-        <div class="plan-name">3 Месяца</div>
-        <div class="plan-price">219 руб</div>
-      </div>
-      <div class="btn-plan" onclick="selectPlan('m6', 399, this)">
-        <div class="plan-name">6 Месяцев</div>
-        <div class="plan-price">399 руб</div>
-      </div>
-    </div>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        tg.setHeaderColor('#1d4ed8');
+        tg.setBackgroundColor('#f5f7fa');
 
-    <button class="btn" id="pay-btn" onclick="proceedToPay()" style="margin-top: 4px;">Оплатить 79 руб</button>
+        const user = tg.initDataUnsafe?.user || {};
+        const userId = user.id;
+        let selectedTariff = '1m';
+        let selectedGiftTariff = '1m';
+        let tariffs = {};
 
-    <div class="section-title">Управление</div>
-    <div class="menu-grid">
-      <button class="btn btn-outline" onclick="openMySubs()">Мои подписки</button>
-      <button class="btn btn-outline" onclick="openPromos()">Промокоды</button>
-      <button class="btn btn-outline" onclick="openReferrals()">Рефералы</button>
-      <button class="btn btn-outline" onclick="openSupport()">Поддержка</button>
-    </div>
-  </div>
+        // Tabs
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.onclick = () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelectorAll('[id^=tab-]').forEach(el => el.classList.add('hidden'));
+                document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
+            };
+        });
 
-  <div class="container hidden" id="result-view">
-    <div class="header">
-      <div class="brand-title">VPN Ключ</div>
-      <div class="user-badge" onclick="backToMain()" style="cursor: pointer;">Закрыть</div>
-    </div>
+        // Load data
+        async function loadUser() {
+            if (!userId) return;
+            const res = await fetch(`/api/user?user_id=${userId}`);
+            const data = await res.json();
+            tariffs = data.tariffs;
 
-    <div class="result-box">
-      <div class="welcome-sub" id="result-desc">Подписка успешно активирована. Скопируйте ключ или отсканируйте QR-код.</div>
-      
-      <div class="qr-container">
-        <img id="qr-img" src="" alt="QR Code">
-      </div>
+            // Tariffs
+            const grid = document.getElementById('tariffs');
+            const giftGrid = document.getElementById('gift-tariffs');
+            grid.innerHTML = '';
+            giftGrid.innerHTML = '';
+            for (const [k, t] of Object.entries(tariffs)) {
+                const el = document.createElement('div');
+                el.className = 'tariff' + (k === '1m' ? ' active' : '');
+                el.innerHTML = `<div class="name">${t.name}</div><div class="price">${t.price} ₽</div><div class="days">${t.days} дней</div>`;
+                el.onclick = () => {
+                    document.querySelectorAll('#tariffs .tariff').forEach(e => e.classList.remove('active'));
+                    el.classList.add('active');
+                    selectedTariff = k;
+                };
+                grid.appendChild(el);
 
-      <div class="section-title">Ключ подключения</div>
-      <div class="link-field" id="vpn-link-text">vless://...</div>
+                const gel = el.cloneNode(true);
+                gel.onclick = () => {
+                    document.querySelectorAll('#gift-tariffs .tariff').forEach(e => e.classList.remove('active'));
+                    gel.classList.add('active');
+                    selectedGiftTariff = k;
+                };
+                giftGrid.appendChild(gel);
+            }
 
-      <button class="btn" onclick="copyKey()">Скопировать ключ</button>
-      <button class="btn btn-outline" onclick="openInApp()">Открыть в приложении</button>
-    </div>
-  </div>
-
-  <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-
-    let selectedPlanKey = 'm1';
-    let selectedPrice = 79;
-    let purchaseMode = 'self';
-    let activeVpnLink = '';
-
-    const user = tg.initDataUnsafe?.user;
-    if (user) {
-      document.getElementById('user-id-badge').innerText = `ID: ${user.id}`;
-    }
-
-    function setMode(mode) {
-      purchaseMode = mode;
-      const selfBtn = document.getElementById('mode-self');
-      const giftBtn = document.getElementById('mode-gift');
-      const giftBox = document.getElementById('gift-input-box');
-      const payBtn = document.getElementById('pay-btn');
-
-      if (mode === 'self') {
-        selfBtn.classList.add('active');
-        giftBtn.classList.remove('active');
-        giftBox.classList.add('hidden');
-        payBtn.innerText = `Оплатить ${selectedPrice} руб`;
-      } else {
-        giftBtn.classList.add('active');
-        selfBtn.classList.remove('active');
-        giftBox.classList.remove('hidden');
-        payBtn.innerText = `Оплатить подарок (${selectedPrice} руб)`;
-      }
-    }
-
-    function selectPlan(key, price, element) {
-      selectedPlanKey = key;
-      selectedPrice = price;
-      
-      document.querySelectorAll('.btn-plan').forEach(el => el.classList.remove('selected'));
-      element.classList.add('selected');
-
-      const payBtn = document.getElementById('pay-btn');
-      if (purchaseMode === 'self') {
-        payBtn.innerText = `Оплатить ${price} руб`;
-      } else {
-        payBtn.innerText = `Оплатить подарок (${price} руб)`;
-      }
-    }
-
-    function proceedToPay() {
-      let targetId = null;
-      if (purchaseMode === 'gift') {
-        targetId = document.getElementById('gift-target-id').value.trim();
-        if (!targetId) {
-          tg.showAlert("Введите Telegram ID друга для подарка.");
-          return;
+            // Subs
+            const list = document.getElementById('subs-list');
+            if (!data.subscriptions.length) {
+                list.innerHTML = '<p style="color:#64748b;text-align:center;">Подписок пока нет</p>';
+            } else {
+                list.innerHTML = data.subscriptions.map(s => `
+                    <div class="sub-item">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                            <span class="badge">${tariffs[s.tariff]?.name || s.tariff}</span>
+                            <span style="font-size:13px;color:#64748b;">до ${s.expires_at.slice(0,10)}</span>
+                        </div>
+                        <div class="key">${s.config || s.key_name}</div>
+                    </div>
+                `).join('');
+            }
         }
-      }
 
-      tg.sendData(JSON.stringify({ 
-        action: 'buy_plan', 
-        plan: selectedPlanKey, 
-        price: selectedPrice,
-        mode: purchaseMode,
-        target_id: targetId 
-      }));
-    }
+        // Pay
+        document.getElementById('btn-pay').onclick = async () => {
+            const promo = document.getElementById('promo-input').value.trim();
+            const btn = document.getElementById('btn-pay');
+            btn.disabled = true;
+            btn.textContent = 'Создаём платёж...';
+            try {
+                const res = await fetch('/api/create_payment', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ user_id: userId, tariff: selectedTariff, promo })
+                });
+                const data = await res.json();
+                if (data.pay_url) {
+                    tg.openLink(data.pay_url);
+                } else {
+                    alert('Ошибка создания платежа');
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Оплатить';
+        };
 
-    function openMySubs() {
-      tg.sendData(JSON.stringify({ action: 'open_my_subs' }));
-    }
+        // Gift
+        document.getElementById('btn-gift').onclick = async () => {
+            const to = document.getElementById('gift-username').value.trim();
+            if (!to) return alert('Укажи @username');
+            const res = await fetch('/api/create_payment', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ user_id: userId, tariff: selectedGiftTariff, is_gift: true, gift_to: to })
+            });
+            const data = await res.json();
+            if (data.pay_url) tg.openLink(data.pay_url);
+        };
 
-    function openPromos() {
-      tg.sendData(JSON.stringify({ action: 'open_promos' }));
-    }
+        // Promo check
+        document.getElementById('btn-check-promo').onclick = async () => {
+            const code = document.getElementById('promo-check').value.trim();
+            const res = await fetch(`/api/promocode?code=${code}`);
+            const data = await res.json();
+            document.getElementById('promo-result').innerHTML = data.valid
+                ? `<span style="color:#059669;font-weight:600;">Скидка ${data.discount}%</span>`
+                : `<span style="color:#dc2626;">Промокод недействителен</span>`;
+        };
 
-    function openReferrals() {
-      tg.sendData(JSON.stringify({ action: 'open_referrals' }));
-    }
+        // Support & links
+        document.getElementById('support-btn').href = 'https://t.me/' + (tg.initDataUnsafe?.user ? '' : '');
+        document.getElementById('policy').href = 'https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99';
+        document.getElementById('offer').href = 'https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15';
 
-    function openSupport() {
-      tg.sendData(JSON.stringify({ action: 'open_support' }));
-    }
+        // Paid redirect
+        if (new URLSearchParams(location.search).get('paid') === '1') {
+            document.getElementById('paid-success').classList.remove('hidden');
+        }
 
-    function showSuccessKey(link, descText = '') {
-      activeVpnLink = link;
-      document.getElementById('main-view').classList.add('hidden');
-      document.getElementById('result-view').classList.remove('hidden');
-      document.getElementById('vpn-link-text').innerText = link;
-      
-      if (descText) {
-        document.getElementById('result-desc').innerText = descText;
-      }
-
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(link)}`;
-      document.getElementById('qr-img').src = qrUrl;
-    }
-
-    function backToMain() {
-      document.getElementById('result-view').classList.add('hidden');
-      document.getElementById('main-view').classList.remove('hidden');
-    }
-
-    function copyKey() {
-      navigator.clipboard.writeText(activeVpnLink);
-      tg.showAlert("Ключ скопирован в буфер обмена.");
-    }
-
-    function openInApp() {
-      window.open(activeVpnLink, '_blank');
-    }
-  </script>
+        loadUser();
+    </script>
 </body>
 </html>
