@@ -1,424 +1,963 @@
-import os
+import asyncio
 import hashlib
 import hmac
+import html
 import json
-import sqlite3
+import logging
+import math
+import os
+import random
+import string
+import time
 import uuid
-import asyncio
-from datetime import datetime, timedelta
-from typing import Optional
 
-from fastapi import FastAPI, Request, HTTPException, Header
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-import httpx
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, CommandStart
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, Message
-from aiogram.enums import ParseMode
+import aiosqlite
+from aiohttp import ClientSession, ClientTimeout, web
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
-import uvicorn
+from aiogram.enums import ParseMode
+from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
-# ==================== CONFIG ====================
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("bot")
+
+# ───────────────────────── Настройки ─────────────────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8708312537:AAG1yrOZc5SWyl2JFXxsNQKE4ga8-Dl7ZRA")
 ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "8995385837").split(",") if i.strip()]
-
 RP_KEY = os.getenv("ROLLYPAY_API_KEY", "Y9ZGC5UCRFgCloE-uluVczR7o12ju6GTb-oRyHaBqRk")
 RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "akjiGkcHyj6dt_WmzbSYeBBorTOnvZ1ucGQzl0BFGdk")
 RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "d21c4db8-e234-4a9b-a00a-2194420af7df")
 RP_BASE = os.getenv("ROLLYPAY_BASE_URL", "https://rollypay.io")
-
+ALLOW_TEST = os.getenv("ALLOW_TEST_PAYMENTS", "0") == "1"
 H1_URL = os.getenv("H1CLOUD_API_URL", "https://s-25154.pl7.h1clayd.click/api").rstrip("/")
 H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "2ead850e5fe347fa9ed81f7838d64fc5590facdea2b94737ba7fff788bd55bb8")
-
-BASE_URL = (os.getenv("BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "https://botvpnzayou.onrender.com").rstrip("/")
-MINI_APP_URL = os.getenv("MINI_APP_URL", BASE_URL)
+BASE_URL = (os.getenv("BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").lstrip("@")
 POLICY_URL = os.getenv("POLICY_URL", "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99")
 OFFER_URL = os.getenv("OFFER_URL", "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15")
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 PORT = int(os.getenv("PORT", "10000"))
-ALLOW_TEST = os.getenv("ALLOW_TEST_PAYMENTS", "0") == "1"
-
-BRAND = "OMNIRO VPN"
 TG_SECRET = hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:48]
+BRAND = "OMNIRO VPN"
 
-# Тарифы (можно менять)
-TARIFFS = {
-    "1m": {"name": "1 месяц", "days": 30, "price": 199, "traffic_gb": 0},
-    "3m": {"name": "3 месяца", "days": 90, "price": 499, "traffic_gb": 0},
-    "6m": {"name": "6 месяцев", "days": 180, "price": 899, "traffic_gb": 0},
-    "12m": {"name": "12 месяцев", "days": 365, "price": 1499, "traffic_gb": 0},
+MINI_APP_URL = os.getenv("MINI_APP_URL", "https://botvpnzayou.onrender.com")
+
+PLANS = {
+    "m1": ("1 месяц", 30, 79),
+    "m3": ("3 месяца", 90, 219),
+    "m6": ("6 месяцев", 180, 399),
 }
 
-# ==================== DB ====================
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            balance REAL DEFAULT 0,
-            created_at TEXT
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            key_name TEXT,
-            config TEXT,
-            tariff TEXT,
-            expires_at TEXT,
-            created_at TEXT,
-            is_gift INTEGER DEFAULT 0,
-            gifted_to INTEGER
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS payments (
-            order_id TEXT PRIMARY KEY,
-            user_id INTEGER,
-            amount REAL,
-            tariff TEXT,
-            status TEXT,
-            payment_id TEXT,
-            created_at TEXT,
-            is_gift INTEGER DEFAULT 0,
-            gift_to_username TEXT
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS promocodes (
-            code TEXT PRIMARY KEY,
-            discount_percent INTEGER,
-            max_uses INTEGER,
-            used INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
-        )
-    """)
-    conn.commit()
-    conn.close()
+bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+router = Router()
+admin = Router()
+admin.message.filter(F.from_user.id.in_(ADMIN_IDS))
+admin.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
+dp.include_router(admin)
+dp.include_router(router)
 
-def get_db():
-    return sqlite3.connect(DB_PATH)
+db: aiosqlite.Connection = None
+http: ClientSession = None
 
-# ==================== H1CLOUD ====================
-async def h1_create_client(name: str, days: int, traffic_gb: int = 0) -> dict:
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-        payload = {"name": name, "days": days}
-        if traffic_gb > 0:
-            payload["traffic_limit_gb"] = traffic_gb
-        r = await client.post(
-            f"{H1_URL}/create",
-            headers={"Authorization": f"Bearer {H1_TOKEN}"},
-            json=payload
-        )
-        r.raise_for_status()
-        return r.json()
 
-async def h1_get_client(name: str) -> Optional[dict]:
-    async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
+def esc(s) -> str:
+    return html.escape(str(s or ""))
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS users(
+  id INTEGER PRIMARY KEY, username TEXT, created INTEGER, promo_code TEXT,
+  banned INTEGER DEFAULT 0, vpn_name TEXT, expires_at INTEGER DEFAULT 0,
+  sub_link TEXT, notified_for INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS orders(
+  order_id TEXT PRIMARY KEY, user_id INTEGER, target_id INTEGER, plan TEXT, days INTEGER, amount REAL,
+  promo TEXT, payment_id TEXT, pay_url TEXT, status TEXT, created INTEGER, paid_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS promos(
+  code TEXT PRIMARY KEY, percent INTEGER, max_uses INTEGER DEFAULT 0,
+  used INTEGER DEFAULT 0, active INTEGER DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS promo_uses(code TEXT, user_id INTEGER, PRIMARY KEY(code, user_id));
+"""
+
+
+async def init_db():
+    global db
+    d = os.path.dirname(DB_PATH)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    await db.executescript(SCHEMA)
+    await db.commit()
+
+
+async def q1(sql, *a):
+    async with db.execute(sql, a) as c:
+        return await c.fetchone()
+
+
+async def qa(sql, *a):
+    async with db.execute(sql, a) as c:
+        return await c.fetchall()
+
+
+async def ex(sql, *a) -> int:
+    async with db.execute(sql, a) as c:
+        n = c.rowcount
+    await db.commit()
+    return n
+
+
+async def upsert_user(uid, username):
+    await ex("INSERT OR IGNORE INTO users(id,username,created) VALUES(?,?,?)", uid, username, int(time.time()))
+    await ex("UPDATE users SET username=? WHERE id=?", username, uid)
+
+
+async def get_user(uid):
+    return await q1("SELECT * FROM users WHERE id=?", uid)
+
+
+class H1Error(Exception):
+    pass
+
+
+async def h1(method, path, **kw):
+    try:
+        async with http.request(
+            method, H1_URL + path, headers={"X-API-Key": H1_TOKEN, "Authorization": f"Bearer {H1_TOKEN}"}, **kw
+        ) as r:
+            text = await r.text()
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = {"raw": text}
+            if r.status >= 400:
+                raise H1Error(f"{method} {path} -> {r.status}: {text[:300]}")
+            return data
+    except H1Error:
+        raise
+    except Exception as e:
+        raise H1Error(f"{method} {path} failed: {e}")
+
+
+LINK_KEYS = ("sub_url", "subscription_url", "subscription", "sub_link", "sub", "link", "url")
+LINK_PREFIX = ("http://", "https://", "vless://", "vmess://", "trojan://", "ss://", "hysteria2://")
+
+
+def find_link(d):
+    if isinstance(d, dict):
+        for k in LINK_KEYS:
+            v = d.get(k)
+            if isinstance(v, str) and v.startswith(LINK_PREFIX):
+                return v
+        for v in d.values():
+            r = find_link(v)
+            if r:
+                return r
+    elif isinstance(d, list):
+        for v in d:
+            r = find_link(v)
+            if r:
+                return r
+    return None
+
+
+async def grant(uid: int, days: int) -> int:
+    u = await get_user(uid)
+    now = int(time.time())
+    new_exp = max(now, (u["expires_at"] if u else 0) or 0) + days * 86400
+    total_days = math.ceil((new_exp - now) / 86400)
+    name = (u["vpn_name"] if u else None) or f"tg{uid}"
+    payload = {"name": name, "days": total_days}
+    
+    data = None
+    try:
+        data = await h1("POST", "/create", json=payload)
+    except H1Error as e:
+        if "409" in str(e) or "user_already_exists" in str(e):
+            log.info("H1 user %s already exists, switching to PATCH /edit", name)
+            try:
+                data = await h1("PATCH", "/edit", json=payload)
+            except H1Error as e2:
+                log.warning("H1 edit fallback failed: %s", e2)
+                raise e2
+        else:
+            log.warning("H1 create error: %s", e)
+            try:
+                data = await h1("PATCH", "/edit", json=payload)
+            except Exception:
+                raise e
+
+    if data is None:
+        raise H1Error("Не удалось получить ответ от H1Cloud при выдаче подписки")
+
+    link = find_link(data)
+    if not link:
         try:
-            r = await client.get(
-                f"{H1_URL}/clients/{name}",
-                headers={"Authorization": f"Bearer {H1_TOKEN}"}
-            )
-            if r.status_code == 404:
-                return None
-            r.raise_for_status()
-            data = r.json()
-            return data.get("client") or data
-        except:
-            return None
+            link = find_link(await h1("GET", "/info", params={"name": name}))
+        except H1Error as e:
+            log.warning("H1 info: %s", e)
+            
+    await ex(
+        "UPDATE users SET vpn_name=?, expires_at=?, sub_link=COALESCE(?, sub_link) WHERE id=?",
+        name, new_exp, link, uid,
+    )
+    return new_exp
 
-# ==================== ROLLYPAY ====================
-async def create_payment(order_id: str, amount: float, description: str, user_id: int) -> dict:
-    payload = {
+
+async def rp(method, path, **kw):
+    headers = {"X-API-Key": RP_KEY, "X-Nonce": str(uuid.uuid4())}
+    async with http.request(method, RP_BASE + path, headers=headers, **kw) as r:
+        text = await r.text()
+        if r.status >= 400:
+            raise RuntimeError(f"RollyPay {r.status}: {text[:300]}")
+        return json.loads(text)
+
+
+async def rp_create_payment(order_id, amount, desc, uid, me_username):
+    body = {
         "amount": f"{amount:.2f}",
         "payment_currency": "RUB",
         "order_id": order_id,
-        "terminal_id": RP_TERMINAL,
-        "description": description,
-        "customer_id": str(user_id),
-        "success_redirect_url": f"{MINI_APP_URL}/?paid=1",
-        "fail_redirect_url": f"{MINI_APP_URL}/?paid=0",
-        "metadata": {"user_id": user_id}
+        "description": desc,
+        "customer_id": str(uid),
+        "success_redirect_url": f"https://t.me/{me_username}",
+        "fail_redirect_url": f"https://t.me/{me_username}",
+        "metadata": {"user_id": uid},
     }
-    headers = {
-        "Content-Type": "application/json",
-        "X-API-Key": RP_KEY,
-        "X-Nonce": str(uuid.uuid4())
-    }
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        r = await client.post(f"{RP_BASE}/api/v1/payments", json=payload, headers=headers)
-        r.raise_for_status()
-        return r.json()
+    if RP_TERMINAL:
+        body["terminal_id"] = RP_TERMINAL
+    return await rp("POST", "/api/v1/payments", json=body)
 
-def verify_rollypay_signature(timestamp: str, body: bytes, signature: str) -> bool:
-    mac = hmac.new(RP_SECRET.encode(), digestmod=hashlib.sha256)
-    mac.update(timestamp.encode())
-    mac.update(b".")
-    mac.update(body)
-    expected = mac.hexdigest()
-    return hmac.compare_digest(expected, signature)
 
-# ==================== BOT ====================
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
+async def get_promo_for(uid):
+    u = await get_user(uid)
+    if not u or not u["promo_code"]:
+        return None
+    p = await q1("SELECT * FROM promos WHERE code=?", u["promo_code"])
+    if p and p["active"] and (p["max_uses"] == 0 or p["used"] < p["max_uses"]):
+        return p
+    return None
 
-def main_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Открыть Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
-        [InlineKeyboardButton(text="💳 Купить подписку", callback_data="buy")],
-        [InlineKeyboardButton(text="🔑 Мои подписки", callback_data="mysubs")],
-        [InlineKeyboardButton(text="🎁 Подарить", callback_data="gift")],
-        [InlineKeyboardButton(text="💬 Поддержка", url=f"https://t.me/{SUPPORT_USERNAME}" if SUPPORT_USERNAME else "https://t.me/")],
-    ])
 
-@dp.message(CommandStart())
-async def cmd_start(message: Message):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, created_at) VALUES (?, ?, ?, ?)",
-              (message.from_user.id, message.from_user.username, message.from_user.first_name, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+def calc(price, promo):
+    pct = promo["percent"] if promo else 0
+    return max(1.0, round(price * (100 - pct) / 100, 2)), pct
 
-    await message.answer(
-        f"<b>Добро пожаловать в {BRAND}!</b>\n\n"
-        "Быстрый, стабильный и анонимный VPN.\n"
-        "Открой Mini App — там всё удобно и красиво 👇",
-        reply_markup=main_keyboard()
+
+def fmt_date(ts):
+    return time.strftime("%d.%m.%Y %H:%M", time.gmtime(ts)) + " UTC"
+
+
+async def notify_admins(text):
+    for a in ADMIN_IDS:
+        try:
+            await bot.send_message(a, text)
+        except Exception:
+            pass
+
+
+async def process_paid(order_id: str, amount=None) -> bool:
+    o = await q1("SELECT * FROM orders WHERE order_id=?", order_id)
+    if not o:
+        log.warning("paid callback for unknown order %s", order_id)
+        return True
+    if amount is not None:
+        try:
+            if abs(float(amount) - o["amount"]) > 0.01:
+                await notify_admins(f"⚠️ Сумма не совпала: заказ {esc(order_id)}, ждали {o['amount']}, пришло {esc(amount)}. Подписка НЕ выдана.")
+                return True
+        except ValueError:
+            pass
+    claimed = await ex(
+        "UPDATE orders SET status='processing' WHERE order_id=? AND status IN ('pending','failed','expired','canceled')",
+        order_id,
     )
-
-@dp.callback_query(F.data == "buy")
-async def cb_buy(callback: types.CallbackQuery):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{t['name']} — {t['price']} ₽", callback_data=f"tariff_{k}")]
-        for k, t in TARIFFS.items()
-    ] + [[InlineKeyboardButton(text="◀️ Назад", callback_data="back")]])
-    await callback.message.edit_text("Выбери тариф:", reply_markup=kb)
-
-@dp.callback_query(F.data.startswith("tariff_"))
-async def cb_tariff(callback: types.CallbackQuery):
-    tariff_key = callback.data.split("_")[1]
-    tariff = TARIFFS[tariff_key]
-    order_id = f"ord_{callback.from_user.id}_{uuid.uuid4().hex[:8]}"
-
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO payments (order_id, user_id, amount, tariff, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-              (order_id, callback.from_user.id, tariff["price"], tariff_key, "created", datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
+    if not claimed:
+        return True
+    
+    target_id = o["target_id"] or o["user_id"]
+    await upsert_user(target_id, None)
 
     try:
-        pay = await create_payment(order_id, tariff["price"], f"{BRAND} — {tariff['name']}", callback.from_user.id)
-        pay_url = pay.get("pay_url")
-        await callback.message.edit_text(
-            f"<b>{tariff['name']}</b>\nСумма: <b>{tariff['price']} ₽</b>\n\nНажми кнопку ниже для оплаты:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Оплатить", url=pay_url)],
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="buy")]
-            ])
-        )
+        new_exp = await grant(target_id, o["days"])
     except Exception as e:
-        await callback.message.edit_text(f"Ошибка создания платежа: {e}")
+        log.exception("grant failed")
+        await ex("UPDATE orders SET status='failed' WHERE order_id=?", order_id)
+        await notify_admins(f"❌ Оплачено, но не удалось выдать VPN\nЗаказ: <code>{esc(order_id)}</code>\nЮзер: <code>{target_id}</code>\n{esc(e)}")
+        return False
 
-@dp.callback_query(F.data == "mysubs")
-async def cb_mysubs(callback: types.CallbackQuery):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT key_name, expires_at, tariff FROM subscriptions WHERE user_id = ? ORDER BY id DESC", (callback.from_user.id,))
-    rows = c.fetchall()
-    conn.close()
+    await ex("UPDATE orders SET status='paid', paid_at=? WHERE order_id=?", int(time.time()), order_id)
+    if o["promo"]:
+        await ex("UPDATE promos SET used=used+1 WHERE code=?", o["promo"])
+        await ex("INSERT OR IGNORE INTO promo_uses(code,user_id) VALUES(?,?)", o["promo"], o["user_id"])
+        await ex("UPDATE users SET promo_code=NULL WHERE id=?", o["user_id"])
+    
+    u = await get_user(target_id)
+    link = u["sub_link"]
+    
+    b = InlineKeyboardBuilder()
+    if link:
+        b.button(text="➕ Добавить в приложение", url=link)
+    b.button(text="📦 Мои подписки", callback_data="my_subs")
+    b.button(text="⬅️ Главное меню", callback_data="menu")
+    b.adjust(1)
 
-    if not rows:
-        text = "У тебя пока нет активных подписок."
+    is_gift = (o["target_id"] and o["target_id"] != o["user_id"])
+    
+    if is_gift:
+        gift_text = f"🎁 <b>Вам подарили подписку VPN!</b>\nПодписка активна до <b>{fmt_date(new_exp)}</b>"
+        try:
+            await bot.send_message(target_id, gift_text, reply_markup=b.as_markup())
+        except Exception:
+            pass
+        buyer_text = f"✅ <b>Подарок успешно отправлен!</b>\nПользователь <code>{target_id}</code> получил подписку до <b>{fmt_date(new_exp)}</b>."
+        try:
+            await bot.send_message(o["user_id"], buyer_text, reply_markup=main_kb(o["user_id"]))
+        except Exception:
+            pass
     else:
-        text = "<b>Твои подписки:</b>\n\n"
-        for name, exp, tar in rows:
-            text += f"• <code>{name}</code>\n  Тариф: {TARIFFS.get(tar, {}).get('name', tar)}\n  До: {exp[:10]}\n\n"
-
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back")]
-    ]))
-
-@dp.callback_query(F.data == "back")
-async def cb_back(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        f"<b>{BRAND}</b>\nВыбери действие:",
-        reply_markup=main_keyboard()
-    )
-
-@dp.callback_query(F.data == "gift")
-async def cb_gift(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "Чтобы подарить подписку — открой Mini App и выбери «Подарить».\n"
-        "Или напиши в поддержку.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="back")]
-        ])
-    )
-
-# ==================== FASTAPI ====================
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.on_event("startup")
-async def startup():
-    init_db()
-    asyncio.create_task(dp.start_polling(bot))
-
-@app.get("/")
-async def index():
-    return FileResponse("index.html")
-
-@app.get("/api/user")
-async def api_user(request: Request):
-    # Простая проверка initData (упрощённо)
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    # В реальном проекте нужно полноценно валидировать
-    user_id = request.query_params.get("user_id")
-    if not user_id:
-        raise HTTPException(400, "user_id required")
-    user_id = int(user_id)
-
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT username, first_name FROM users WHERE user_id = ?", (user_id,))
-    row = c.fetchone()
-    c.execute("SELECT key_name, expires_at, tariff, config FROM subscriptions WHERE user_id = ? ORDER BY id DESC", (user_id,))
-    subs = c.fetchall()
-    conn.close()
-
-    return {
-        "user_id": user_id,
-        "username": row[0] if row else None,
-        "first_name": row[1] if row else None,
-        "subscriptions": [
-            {"key_name": s[0], "expires_at": s[1], "tariff": s[2], "config": s[3]}
-            for s in subs
-        ],
-        "tariffs": TARIFFS
-    }
-
-@app.post("/api/create_payment")
-async def api_create_payment(data: dict):
-    user_id = data.get("user_id")
-    tariff_key = data.get("tariff")
-    promo = data.get("promo", "").upper().strip()
-    is_gift = data.get("is_gift", False)
-    gift_to = data.get("gift_to")
-
-    if tariff_key not in TARIFFS:
-        raise HTTPException(400, "Invalid tariff")
-
-    tariff = TARIFFS[tariff_key]
-    price = tariff["price"]
-
-    # Промокод
-    if promo:
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code = ?", (promo,))
-        row = c.fetchone()
-        if row and row[3] and row[2] < row[1]:
-            discount = row[0]
-            price = max(1, int(price * (100 - discount) / 100))
-            c.execute("UPDATE promocodes SET used = used + 1 WHERE code = ?", (promo,))
-            conn.commit()
-        conn.close()
-
-    order_id = f"ord_{user_id}_{uuid.uuid4().hex[:8]}"
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("""INSERT INTO payments (order_id, user_id, amount, tariff, status, created_at, is_gift, gift_to_username)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-              (order_id, user_id, price, tariff_key, "created", datetime.now().isoformat(), 1 if is_gift else 0, gift_to))
-    conn.commit()
-    conn.close()
-
-    pay = await create_payment(order_id, price, f"{BRAND} — {tariff['name']}", user_id)
-    return {"pay_url": pay.get("pay_url"), "order_id": order_id, "amount": price}
-
-@app.post("/webhook/rollypay")
-async def webhook_rollypay(request: Request, x_signature: str = Header(None), x_timestamp: str = Header(None)):
-    body = await request.body()
-    if not verify_rollypay_signature(x_timestamp or "", body, x_signature or ""):
-        raise HTTPException(403, "Invalid signature")
-
-    data = json.loads(body)
-    if data.get("event_type") != "payment.paid" and data.get("status") != "paid":
-        return {"ok": True}
-
-    order_id = data.get("order_id")
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT user_id, tariff, status, is_gift, gift_to_username FROM payments WHERE order_id = ?", (order_id,))
-    row = c.fetchone()
-    if not row or row[2] == "paid":
-        conn.close()
-        return {"ok": True}
-
-    user_id, tariff_key, _, is_gift, gift_to = row
-    tariff = TARIFFS[tariff_key]
-
-    # Создаём ключ
-    key_name = f"u{user_id}_{uuid.uuid4().hex[:6]}"
-    try:
-        result = await h1_create_client(key_name, tariff["days"], tariff.get("traffic_gb", 0))
-        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
-    except Exception as e:
-        config = f"Ошибка создания ключа: {e}"
-        key_name = "error"
-
-    expires = (datetime.now() + timedelta(days=tariff["days"])).isoformat()
-
-    c.execute("UPDATE payments SET status = 'paid', payment_id = ? WHERE order_id = ?",
-              (data.get("payment_id"), order_id))
-    c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at, is_gift)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)""",
-              (user_id, key_name, config, tariff_key, expires, datetime.now().isoformat(), is_gift))
-    conn.commit()
-    conn.close()
-
-    # Отправляем ключ пользователю
-    try:
         text = (
-            f"<b>✅ Оплата прошла успешно!</b>\n\n"
-            f"Тариф: <b>{tariff['name']}</b>\n"
-            f"Ключ: <code>{key_name}</code>\n\n"
-            f"<b>Конфиг:</b>\n<code>{config}</code>\n\n"
-            f"Срок до: {expires[:10]}"
+            f"✅ <b>Оплата получена!</b>\nПодписка активна до <b>{fmt_date(new_exp)}</b>\n\n"
+            "Выбери действие ниже, чтобы настроить подключение:"
         )
-        await bot.send_message(user_id, text)
-    except:
+        try:
+            await bot.send_message(o["user_id"], text, reply_markup=b.as_markup())
+        except Exception:
+            pass
+    return True
+
+
+def main_kb(uid):
+    b = InlineKeyboardBuilder()
+    if MINI_APP_URL:
+        b.button(text="⚡ OMNIRO App", web_app=WebAppInfo(url=MINI_APP_URL))
+    
+    b.button(text="🛒 Купить VPN", callback_data="buy")
+    b.button(text="🎁 Подарить VPN", callback_data="gift")
+    b.button(text="👤 Профиль", callback_data="profile")
+    b.button(text="📦 Мои подписки", callback_data="my_subs")
+    b.button(text="🎟 Промокод", callback_data="promo")
+    b.button(text="🆘 Поддержка", callback_data="support")
+    b.button(text="📄 Документы", callback_data="docs")
+    if uid in ADMIN_IDS:
+        b.button(text="⚙️ Админ-панель", callback_data="adm")
+    b.adjust(1, 2, 2, 2, 1)
+    return b.as_markup()
+
+
+def back_kb(to="menu"):
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=to)]])
+
+
+async def show(cb: CallbackQuery, text, kb=None):
+    try:
+        await cb.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+    except Exception:
+        await cb.message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+
+
+class Guard(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        u = data.get("event_from_user")
+        if u and not u.is_bot:
+            await upsert_user(u.id, u.username)
+            if u.id not in ADMIN_IDS:
+                r = await q1("SELECT banned FROM users WHERE id=?", u.id)
+                if r and r["banned"]:
+                    return
+        return await handler(event, data)
+
+
+dp.message.outer_middleware(Guard())
+dp.callback_query.outer_middleware(Guard())
+
+
+class S(StatesGroup):
+    promo = State()
+    support = State()
+    gift_target = State()
+
+
+WELCOME = f"👋 Добро пожаловать в <b>{BRAND}</b>!\n\n⚡ Быстрый и стабильный VPN\n🔒 Без логов, без ограничений скорости\n📱 Все устройства\n\nВыбери действие:"
+
+
+@router.message(CommandStart())
+async def start(m: Message, state: FSMContext):
+    await state.clear()
+    await m.answer(WELCOME, reply_markup=main_kb(m.from_user.id))
+
+
+@router.callback_query(F.data == "menu")
+async def menu(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await show(cb, WELCOME, main_kb(cb.from_user.id))
+    await cb.answer()
+
+
+@router.callback_query(F.data == "docs")
+async def docs(cb: CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔐 Политика конфиденциальности", url=POLICY_URL)],
+        [InlineKeyboardButton(text="📜 Публичная оферта", url=OFFER_URL)],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")],
+    ])
+    await show(cb, "📄 <b>Документы</b>", kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data == "profile")
+async def profile(cb: CallbackQuery):
+    u = await get_user(cb.from_user.id)
+    now = int(time.time())
+    n = (await q1("SELECT COUNT(*) c FROM orders WHERE user_id=? AND status='paid'", u["id"]))["c"]
+    if u["expires_at"] and u["expires_at"] > now:
+        left = math.ceil((u["expires_at"] - now) / 86400)
+        sub = f"🟢 Активна до <b>{fmt_date(u['expires_at'])}</b> (осталось ~{left} дн.)"
+    elif u["expires_at"]:
+        sub = f"🔴 Истекла {fmt_date(u['expires_at'])}"
+    else:
+        sub = "⚪ Нет подписки"
+    text = f"👤 <b>Профиль</b>\n\nID: <code>{u['id']}</code>\nПодписка: {sub}\nПокупок: {n}"
+    if u["promo_code"]:
+        text += f"\n🎟 Активный промокод: <code>{esc(u['promo_code'])}</code>"
+    
+    b = InlineKeyboardBuilder()
+    b.button(text="📦 Мои подписки", callback_data="my_subs")
+    b.button(text="🛒 Купить / продлить", callback_data="buy")
+    b.button(text="⬅️ Назад", callback_data="menu")
+    b.adjust(1)
+    await show(cb, text, b.as_markup())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "my_subs")
+async def my_subs(cb: CallbackQuery):
+    u = await get_user(cb.from_user.id)
+    now = int(time.time())
+    
+    if not u or not u["expires_at"] or u["expires_at"] <= now:
+        text = "📦 <b>Мои подписки</b>\n\nУ вас пока нет активных подписок. Выберите тариф для покупки."
+        b = InlineKeyboardBuilder()
+        b.button(text="🛒 Купить VPN", callback_data="buy")
+        b.button(text="⬅️ Назад", callback_data="menu")
+        b.adjust(1)
+        return await show(cb, text, b.as_markup())
+
+    left = math.ceil((u["expires_at"] - now) / 86400)
+    link = u["sub_link"] or "Ссылка пока не сформирована, обратитесь в поддержку."
+    
+    text = (
+        f"📦 <b>Ваша активная подписка:</b>\n\n"
+        f"🟢 Статус: Активна\n"
+        f"⏳ Срок действия: до <b>{fmt_date(u['expires_at'])}</b> (~{left} дн.)\n\n"
+        f"🔑 <b>Ссылка для подключения:</b>\n<code>{esc(link)}</code>\n\n"
+        f"<i>Вставьте её в любое поддерживаемое приложение (v2rayN, Hiddify, Streisand, Happ и т.д.).</i>"
+    )
+    
+    b = InlineKeyboardBuilder()
+    if u["sub_link"]:
+        b.button(text="➕ Добавить в приложение", url=u["sub_link"])
+    b.button(text="🛒 Продлить подписку", callback_data="buy")
+    b.button(text="⬅️ В меню", callback_data="menu")
+    b.adjust(1)
+    await show(cb, text, b.as_markup())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "buy")
+async def buy(cb: CallbackQuery):
+    promo = await get_promo_for(cb.from_user.id)
+    b = InlineKeyboardBuilder()
+    for k, (name, days, price) in PLANS.items():
+        amount, pct = calc(price, promo)
+        label = f"{name} — {amount:g} ₽" + (f" (−{pct}%)" if pct else "")
+        b.button(text=label, callback_data=f"plan:{k}")
+    b.button(text="🎟 Ввести промокод", callback_data="promo")
+    b.button(text="⬅️ Назад", callback_data="menu")
+    b.adjust(1)
+    text = "🛒 <b>Выбери тариф</b>\nОплата картой / СБП / криптой. Подписка активируется автоматически."
+    if promo:
+        text += f"\n\n🎟 Промокод <code>{esc(promo['code'])}</code>: скидка {promo['percent']}%"
+    await show(cb, text, b.as_markup())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "gift")
+async def gift_ask(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(S.gift_target)
+    await show(cb, "🎁 <b>Подарить подписку</b>\n\nОтправь Telegram ID пользователя, которому хочешь подарить подписку:", back_kb("menu"))
+    await cb.answer()
+
+
+@router.message(S.gift_target)
+async def gift_target_set(m: Message, state: FSMContext):
+    try:
+        target_id = int((m.text or "").strip())
+    except ValueError:
+        return await m.answer("❌ Введите числовой Telegram ID пользователю (например: 123456789).", reply_markup=back_kb("menu"))
+    
+    await state.update_data(target_id=target_id)
+    await state.clear()
+    
+    promo = await get_promo_for(m.from_user.id)
+    b = InlineKeyboardBuilder()
+    for k, (name, days, price) in PLANS.items():
+        amount, pct = calc(price, promo)
+        label = f"🎁 {name} — {amount:g} ₽"
+        b.button(text=label, callback_data=f"gift_plan:{target_id}:{k}")
+    b.button(text="⬅️ Отмена", callback_data="menu")
+    b.adjust(1)
+    
+    await m.answer(f"🎁 Выберите тариф для подарка пользователю <code>{target_id}</code>:", reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data.startswith("gift_plan:"))
+async def gift_plan(cb: CallbackQuery):
+    _, target_id_str, key = cb.data.split(":")
+    target_id = int(target_id_str)
+    if key not in PLANS:
+        return await cb.answer("Тариф не найден", show_alert=True)
+    name, days, price = PLANS[key]
+    promo = await get_promo_for(cb.from_user.id)
+    amount, _ = calc(price, promo)
+    uid = cb.from_user.id
+    order_id = f"g{uid}_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
+    me = (await bot.me()).username
+    try:
+        p = await rp_create_payment(order_id, amount, f"{BRAND} (Подарок для {target_id}): {name}", uid, me)
+    except Exception as e:
+        log.exception("create payment")
+        await notify_admins(f"❌ Ошибка создания платежа: {esc(e)}")
+        return await cb.answer("Не удалось создать платёж, попробуй позже", show_alert=True)
+    
+    await ex(
+        "INSERT INTO orders(order_id,user_id,target_id,plan,days,amount,promo,payment_id,pay_url,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        order_id, uid, target_id, key, days, amount, promo["code"] if promo else None, p["payment_id"], p["pay_url"], "pending", int(time.time()),
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"💳 Оплатить подарок {amount:g} ₽", url=p["pay_url"])],
+        [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"chk:{order_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu")],
+    ])
+    await show(cb, f"🎁 <b>Заказ подарка</b>\nПолучатель: <code>{target_id}</code>\nТариф: {name}\nСумма: <b>{amount:g} ₽</b>\n\nПосле оплаты подписка сразу активируется у получателя!", kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("plan:"))
+async def plan(cb: CallbackQuery):
+    key = cb.data.split(":")[1]
+    if key not in PLANS:
+        return await cb.answer("Тариф не найден", show_alert=True)
+    name, days, price = PLANS[key]
+    promo = await get_promo_for(cb.from_user.id)
+    amount, _ = calc(price, promo)
+    uid = cb.from_user.id
+    order_id = f"o{uid}_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
+    me = (await bot.me()).username
+    try:
+        p = await rp_create_payment(order_id, amount, f"{BRAND}: {name}", uid, me)
+    except Exception as e:
+        log.exception("create payment")
+        await notify_admins(f"❌ Ошибка создания платежа: {esc(e)}")
+        return await cb.answer("Не удалось создать платёж, попробуй позже", show_alert=True)
+    await ex(
+        "INSERT INTO orders(order_id,user_id,target_id,plan,days,amount,promo,payment_id,pay_url,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        order_id, uid, uid, key, days, amount, promo["code"] if promo else None, p["payment_id"], p["pay_url"], "pending", int(time.time()),
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"💳 Оплатить {amount:g} ₽", url=p["pay_url"])],
+        [InlineKeyboardButton(text="✅ Я оплатил(а) — проверить", callback_data=f"chk:{order_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="buy")],
+    ])
+    await show(cb, f"🧾 <b>Заказ</b>\nТариф: {name}\nСумма: <b>{amount:g} ₽</b>\n\nНажми «Оплатить». После оплаты подписка придёт автоматически (или нажми «проверить»).", kb)
+    await cb.answer()
+
+
+@router.callback_query(F.data.startswith("chk:"))
+async def check(cb: CallbackQuery):
+    order_id = cb.data.split(":", 1)[1]
+    o = await q1("SELECT * FROM orders WHERE order_id=? AND user_id=?", order_id, cb.from_user.id)
+    if not o:
+        return await cb.answer("Заказ не найден", show_alert=True)
+    if o["status"] == "paid":
+        return await cb.answer("Уже оплачено ✅ Смотри «Мои подписки»", show_alert=True)
+    try:
+        p = await rp("GET", f"/api/v1/payments/{o['payment_id']}")
+    except Exception:
+        return await cb.answer("Не удалось проверить, попробуй через минуту", show_alert=True)
+    if p.get("status") == "paid":
+        await process_paid(order_id, p.get("amount"))
+        return await cb.answer("Оплата найдена! Выдаю подписку…")
+    await cb.answer(f"Пока не оплачено (статус: {p.get('status')})", show_alert=True)
+
+
+@router.message(F.web_app_data)
+async def web_app_data_handler(m: Message):
+    try:
+        data = json.loads(m.web_app_data.data)
+        action = data.get("action")
+        if action == "buy_plan":
+            key = data.get("plan")
+            if key in PLANS:
+                name, days, price = PLANS[key]
+                uid = m.from_user.id
+                order_id = f"o{uid}_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
+                me = (await bot.me()).username
+                p = await rp_create_payment(order_id, price, f"{BRAND}: {name}", uid, me)
+                await ex(
+                    "INSERT INTO orders(order_id,user_id,target_id,plan,days,amount,promo,payment_id,pay_url,status,created) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    order_id, uid, uid, key, days, price, None, p["payment_id"], p["pay_url"], "pending", int(time.time()),
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=f"💳 Оплатить {price} ₽", url=p["pay_url"])],
+                    [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"chk:{order_id}")]
+                ])
+                await m.answer(f"🧾 Сформирован заказ из приложения:\nТариф: <b>{name}</b>\nСумма: <b>{price} ₽</b>", reply_markup=kb)
+        elif action == "open_support":
+            await m.answer("🆘 Напишите ваш вопрос в поддержку:", reply_markup=back_kb("menu"))
+    except Exception as e:
+        log.error("web_app_data error: %s", e)
+
+
+@router.callback_query(F.data == "promo")
+async def promo_ask(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(S.promo)
+    await show(cb, "🎟 Отправь промокод одним сообщением:", back_kb("menu"))
+    await cb.answer()
+
+
+@router.message(S.promo)
+async def promo_set(m: Message, state: FSMContext):
+    code = (m.text or "").strip().upper()
+    p = await q1("SELECT * FROM promos WHERE code=?", code)
+    if not p or not p["active"]:
+        return await m.answer("❌ Промокод не найден или отключён. Попробуй ещё раз или вернись в меню.", reply_markup=back_kb())
+    if p["max_uses"] and p["used"] >= p["max_uses"]:
+        return await m.answer("❌ Лимит активаций промокода исчерпан.", reply_markup=back_kb())
+    if await q1("SELECT 1 FROM promo_uses WHERE code=? AND user_id=?", code, m.from_user.id):
+        return await m.answer("❌ Ты уже использовал(а) этот промокод.", reply_markup=back_kb())
+    await ex("UPDATE users SET promo_code=? WHERE id=?", code, m.from_user.id)
+    await state.clear()
+    b = InlineKeyboardBuilder()
+    b.button(text="🛒 Купить со скидкой", callback_data="buy")
+    b.button(text="⬅️ В меню", callback_data="menu")
+    b.adjust(1)
+    await m.answer(f"✅ Промокод применён: скидка <b>{p['percent']}%</b> на следующую покупку.", reply_markup=b.as_markup())
+
+
+@router.callback_query(F.data == "support")
+async def support(cb: CallbackQuery, state: FSMContext):
+    b = InlineKeyboardBuilder()
+    if SUPPORT_USERNAME:
+        b.button(text="💬 Написать в Telegram", url=f"https://t.me/{SUPPORT_USERNAME}")
+    b.button(text="✉️ Написать здесь (в боте)", callback_data="support_write")
+    b.button(text="⬅️ Назад", callback_data="menu")
+    b.adjust(1)
+    await show(cb, "🆘 <b>Поддержка</b>\nОпиши проблему — ответим как можно скорее.", b.as_markup())
+    await cb.answer()
+
+
+@router.callback_query(F.data == "support_write")
+async def support_write(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(S.support)
+    await show(cb, "✉️ Напиши сообщение для поддержки (одним сообщением):", back_kb("support"))
+    await cb.answer()
+
+
+@router.message(S.support)
+async def support_msg(m: Message, state: FSMContext):
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="↩️ Ответить", callback_data=f"ans:{m.from_user.id}")]])
+    head = f"🆘 Обращение от <code>{m.from_user.id}</code> @{esc(m.from_user.username)}"
+    for a in ADMIN_IDS:
+        try:
+            await bot.send_message(a, head)
+            await m.copy_to(a, reply_markup=kb)
+        except Exception:
+            pass
+    await m.answer("✅ Сообщение отправлено. Ответ придёт сюда.", reply_markup=main_kb(m.from_user.id))
+
+
+class A(StatesGroup):
+    promo_new = State()
+    promo_del = State()
+    grant = State()
+    bc = State()
+    find = State()
+    ban = State()
+    unban = State()
+    reply = State()
+
+
+def adm_kb():
+    b = InlineKeyboardBuilder()
+    for t, d in [
+        ("📊 Статистика", "adm:stats"), ("🎟 Промокоды", "adm:promos"),
+        ("🎁 Выдать подписку", "adm:grant"), ("📣 Рассылка", "adm:bc"),
+        ("🔎 Найти юзера", "adm:find"), ("🚫 Бан", "adm:ban"),
+        ("♻️ Разбан", "adm:unban"), ("🛠 Диагностика H1Cloud", "adm:h1"),
+    ]:
+        b.button(text=t, callback_data=d)
+    b.button(text="⬅️ В меню", callback_data="menu")
+    b.adjust(2, 2, 2, 1, 1)
+    return b.as_markup()
+
+
+@admin.message(Command("admin"))
+async def admin_cmd(m: Message, state: FSMContext):
+    await state.clear()
+    await m.answer("⚙️ <b>Админ-панель</b>", reply_markup=adm_kb())
+
+
+@admin.callback_query(F.data == "adm")
+async def admin_cb(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await show(cb, "⚙️ <b>Админ-панель</b>", adm_kb())
+    await cb.answer()
+
+
+PROMPTS = {
+    "promo_new": (A.promo_new, "Создание промокода. Формат:\n<code>КОД ПРОЦЕНТ МАКС_АКТИВАЦИЙ</code>\nНапример: <code>WELCOME 20 100</code> (0 = без лимита)"),
+    "promo_del": (A.promo_del, "Отправь код промокода для удаления:"),
+    "grant": (A.grant, "Формат: <code>ID_ПОЛЬЗОВАТЕЛЯ ДНЕЙ</code>\nНапример: <code>123456789 30</code>"),
+    "bc": (A.bc, "Отправь текст рассылки (HTML разрешён). Уйдёт всем пользователям:"),
+    "find": (A.find, "Отправь Telegram ID пользователя:"),
+    "ban": (A.ban, "Отправь ID для бана:"),
+    "unban": (A.unban, "Отправь ID для разбана:"),
+}
+
+
+@admin.callback_query(F.data.startswith("adm:"))
+async def admin_actions(cb: CallbackQuery, state: FSMContext):
+    act = cb.data.split(":")[1]
+    if act in PROMPTS:
+        st, text = PROMPTS[act]
+        await state.set_state(st)
+        await show(cb, text, back_kb("adm"))
+    elif act == "stats":
+        now = int(time.time())
+        users = (await q1("SELECT COUNT(*) c FROM users"))["c"]
+        active = (await q1("SELECT COUNT(*) c FROM users WHERE expires_at>?", now))["c"]
+        paid = await q1("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM orders WHERE status='paid'")
+        day = await q1("SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM orders WHERE status='paid' AND paid_at>?", now - 86400)
+        failed = (await q1("SELECT COUNT(*) c FROM orders WHERE status='failed'"))["c"]
+        await show(cb, f"📊 <b>Статистика</b>\n\nПользователей: {users}\nАктивных подписок: {active}\nОплат всего: {paid['c']} на {paid['s']:.0f} ₽\nЗа 24ч: {day['c']} на {day['s']:.0f} ₽\nНевыданных (failed): {failed}", back_kb("adm"))
+    elif act == "promos":
+        rows = await qa("SELECT * FROM promos ORDER BY rowid DESC LIMIT 40")
+        t = "🎟 <b>Промокоды</b>\n\n" + ("\n".join(f"<code>{esc(r['code'])}</code> −{r['percent']}% · {r['used']}/{r['max_uses'] or '∞'}" for r in rows) or "Пусто")
+        b = InlineKeyboardBuilder()
+        b.button(text="➕ Создать", callback_data="adm:promo_new")
+        b.button(text="🗑 Удалить", callback_data="adm:promo_del")
+        b.button(text="⬅️ Назад", callback_data="adm")
+        b.adjust(2, 1)
+        await show(cb, t, b.as_markup())
+    elif act == "h1":
+        try:
+            st = await h1("GET", "/status")
+            cl = await h1("GET", "/clients")
+            txt = f"<b>/status</b>\n<pre>{esc(json.dumps(st, ensure_ascii=False)[:700])}</pre>\n<b>/clients</b>\n<pre>{esc(json.dumps(cl, ensure_ascii=False)[:900])}</pre>"
+        except H1Error as e:
+            txt = f"❌ {esc(e)}"
+        await show(cb, txt, back_kb("adm"))
+    await cb.answer()
+
+
+@admin.message(A.promo_new)
+async def a_promo_new(m: Message, state: FSMContext):
+    try:
+        code, pct, mx = (m.text or "").split()
+        code, pct, mx = code.upper(), int(pct), int(mx)
+        assert 1 <= pct <= 99 and mx >= 0
+    except Exception:
+        return await m.answer("Неверный формат. Пример: <code>WELCOME 20 100</code> (процент 1–99)")
+    await ex("INSERT OR REPLACE INTO promos(code,percent,max_uses,used,active) VALUES(?,?,?,COALESCE((SELECT used FROM promos WHERE code=?),0),1)", code, pct, mx, code)
+    await state.clear()
+    await m.answer(f"✅ Промокод <code>{esc(code)}</code> −{pct}% (лимит {mx or '∞'})", reply_markup=adm_kb())
+
+
+@admin.message(A.promo_del)
+async def a_promo_del(m: Message, state: FSMContext):
+    n = await ex("DELETE FROM promos WHERE code=?", (m.text or "").strip().upper())
+    await state.clear()
+    await m.answer("🗑 Удалён" if n else "Не найден", reply_markup=adm_kb())
+
+
+@admin.message(A.grant)
+async def a_grant(m: Message, state: FSMContext):
+    try:
+        uid, days = (int(x) for x in (m.text or "").split())
+    except Exception:
+        return await m.answer("Формат: <code>ID ДНЕЙ</code>")
+    await upsert_user(uid, None)
+    try:
+        exp = await grant(uid, days)
+    except Exception as e:
+        return await m.answer(f"❌ {esc(e)}")
+    await state.clear()
+    u = await get_user(uid)
+    try:
+        await bot.send_message(uid, f"🎁 Тебе выдана подписка на {days} дн. Действует до {fmt_date(exp)}.\n" + (f"<code>{esc(u['sub_link'])}</code>" if u["sub_link"] else ""))
+    except Exception:
         pass
+    await m.answer(f"✅ Выдано. До {fmt_date(exp)}", reply_markup=adm_kb())
 
-    return {"ok": True}
 
-@app.get("/api/promocode")
-async def check_promo(code: str):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT discount_percent, max_uses, used, active FROM promocodes WHERE code = ?", (code.upper(),))
-    row = c.fetchone()
-    conn.close()
-    if row and row[3] and row[2] < row[1]:
-        return {"valid": True, "discount": row[0]}
-    return {"valid": False}
+@admin.message(A.bc)
+async def a_bc(m: Message, state: FSMContext):
+    await state.clear()
+    ids = [r["id"] for r in await qa("SELECT id FROM users WHERE banned=0")]
+    ok = 0
+    await m.answer(f"Рассылаю {len(ids)} пользователям…")
+    for i in ids:
+        try:
+            await bot.send_message(i, m.html_text or m.text)
+            ok += 1
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+    await m.answer(f"✅ Доставлено: {ok}/{len(ids)}", reply_markup=adm_kb())
+
+
+@admin.message(A.find)
+async def a_find(m: Message, state: FSMContext):
+    try:
+        u = await get_user(int((m.text or "").strip()))
+    except ValueError:
+        u = None
+    if not u:
+        return await m.answer("Не найден")
+    await state.clear()
+    n = (await q1("SELECT COUNT(*) c FROM orders WHERE user_id=? AND status='paid'", u["id"]))["c"]
+    await m.answer(
+        f"👤 <code>{u['id']}</code> @{esc(u['username'])}\nБан: {'да' if u['banned'] else 'нет'}\nДо: {fmt_date(u['expires_at']) if u['expires_at'] else '—'}\nVPN-имя: {esc(u['vpn_name'])}\nОплат: {n}\nПромокод: {esc(u['promo_code'])}",
+        reply_markup=adm_kb(),
+    )
+
+
+@admin.message(A.ban)
+@admin.message(A.unban)
+async def a_ban(m: Message, state: FSMContext):
+    cur = await state.get_state()
+    try:
+        uid = int((m.text or "").strip())
+    except ValueError:
+        return await m.answer("Нужен числовой ID")
+    flag = 1 if cur == A.ban.state else 0
+    n = await ex("UPDATE users SET banned=? WHERE id=?", flag, uid)
+    await state.clear()
+    await m.answer(("🚫 Забанен" if flag else "♻️ Разбанен") if n else "Пользователь не найден", reply_markup=adm_kb())
+
+
+@admin.callback_query(F.data.startswith("ans:"))
+async def a_ans(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(A.reply)
+    await state.update_data(to=int(cb.data.split(":")[1]))
+    await cb.message.answer("Напиши ответ пользователю:")
+    await cb.answer()
+
+
+@admin.message(A.reply)
+async def a_reply(m: Message, state: FSMContext):
+    to = (await state.get_data())["to"]
+    await state.clear()
+    try:
+        await bot.send_message(to, "💬 <b>Ответ поддержки:</b>\n\n" + (m.html_text or ""))
+        await m.answer("✅ Отправлено")
+    except Exception as e:
+        await m.answer(f"❌ {esc(e)}")
+
+
+async def rp_webhook(request: web.Request):
+    raw = await request.read()
+    ts = request.headers.get("X-Timestamp", "")
+    sig = request.headers.get("X-Signature", "")
+    exp = hmac.new(RP_SECRET.encode(), ts.encode() + b"." + raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(exp.encode(), sig.strip().lower().encode()):
+        log.warning("bad rollypay signature")
+        return web.Response(status=403, text="bad signature")
+    try:
+        ev = json.loads(raw)
+    except ValueError:
+        return web.Response(status=400)
+    if ev.get("test") and not ALLOW_TEST:
+        return web.Response(text="ok")
+    status, order_id = ev.get("status"), ev.get("order_id")
+    log.info("rollypay %s %s", ev.get("event_type"), order_id)
+    if status == "paid":
+        ok = await process_paid(order_id, ev.get("amount"))
+        return web.Response(status=200 if ok else 500, text="ok" if ok else "retry")
+    if status in ("expired", "canceled"):
+        await ex("UPDATE orders SET status=? WHERE order_id=? AND status='pending'", status, order_id)
+    elif status in ("refunded", "chargeback"):
+        await notify_admins(f"⚠️ {esc(status)} по заказу <code>{esc(order_id)}</code>. Проверь и при необходимости отключи клиента.")
+    return web.Response(text="ok")
+
+
+async def expiry_loop():
+    while True:
+        try:
+            now = int(time.time())
+            for u in await qa("SELECT id, expires_at FROM users WHERE expires_at>? AND expires_at<? AND notified_for!=expires_at", now, now + 3 * 86400):
+                try:
+                    await bot.send_message(u["id"], f"⏳ Подписка {BRAND} заканчивается {fmt_date(u['expires_at'])}. Продли в меню «Купить VPN».", reply_markup=main_kb(u["id"]))
+                except Exception:
+                    pass
+                await ex("UPDATE users SET notified_for=? WHERE id=?", u["expires_at"], u["id"])
+        except Exception:
+            log.exception("expiry loop")
+        await asyncio.sleep(6 * 3600)
+
+
+async def on_startup(bot: Bot):
+    global http
+    await init_db()
+    http = ClientSession(timeout=ClientTimeout(total=25))
+    if not BASE_URL:
+        log.error("BASE_URL / RENDER_EXTERNAL_URL не задан — вебхуки работать не будут")
+        return
+    await bot.set_webhook(f"{BASE_URL}/tg", secret_token=TG_SECRET, drop_pending_updates=False, allowed_updates=["message", "callback_query"])
+    await bot.set_my_commands([BotCommand(command="start", description="Главное меню")])
+    if RP_TERMINAL:
+        try:
+            await rp("PUT", f"/api/v1/terminals/{RP_TERMINAL}", json={"callback_url": f"{BASE_URL}/rollypay/webhook"})
+            log.info("RollyPay callback_url set")
+        except Exception as e:
+            log.warning("не удалось выставить callback_url автоматически: %s", e)
+    asyncio.create_task(expiry_loop())
+
+
+async def on_shutdown(bot: Bot):
+    if http:
+        await http.close()
+    if db:
+        await db.close()
+
+
+def main():
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+    app = web.Application()
+    
+    async def index_handler(request):
+        return web.FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
+        
+    app.router.add_get("/", index_handler)
+    app.router.add_get("/index.html", index_handler)
+    app.router.add_get("/health", lambda r: web.Response(text="ok"))
+    app.router.add_post("/rollypay/webhook", rp_webhook)
+    SimpleRequestHandler(dispatcher=dp, bot=bot, secret_token=TG_SECRET).register(app, path="/tg")
+    setup_application(app, dp, bot=bot)
+    web.run_app(app, host="0.0.0.0", port=PORT)
+
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    main()
