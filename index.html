@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>OMNIRO VPN Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-color: #000000;
+      --card-bg: #0d0d0d;
+      --border-color: #222222;
+      --text-main: #ffffff;
+      --text-muted: #888888;
+      --accent-white: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 420px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent-white);
+    }
+
+    .badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background-color: #111111;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+    }
+
+    .status-title {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .status-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-white);
+    }
+
+    .sub-link-box {
+      margin-top: 12px;
+      background: #000000;
+      border: 1px dashed var(--border-color);
+      padding: 10px;
+      border-radius: 8px;
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--accent-white);
+      background-color: var(--accent-white);
+      color: #000000;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:active {
+      opacity: 0.8;
+      transform: scale(0.98);
+    }
+
+    .btn-outline {
+      background-color: transparent;
+      color: var(--accent-white);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-outline:active {
+      border-color: var(--accent-white);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .plan-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .plan-card:hover, .plan-card:active {
+      border-color: var(--accent-white);
+    }
+
+    .plan-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .plan-price {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--accent-white);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <div class="brand">OMNIRO VPN</div>
+      <div class="badge" id="user-id">ID: ---</div>
+    </div>
+
+    <div class="card">
+      <div class="status-title">Статус подключения</div>
+      <div class="status-value" id="sub-status">Активна в Telegram</div>
+      
+      <div class="sub-link-box" id="sub-link">
+        Выберите тариф ниже или управляйте подпиской
+      </div>
+    </div>
+
+    <div class="status-title" style="margin-top: 4px;">Выберите тариф</div>
+    
+    <div class="grid">
+      <div class="plan-card" onclick="selectPlan('m1', 79)">
+        <div class="plan-title">1 Месяц</div>
+        <div class="plan-price">79 ₽</div>
+      </div>
+      <div class="plan-card" onclick="selectPlan('m3', 219)">
+        <div class="plan-title">3 Месяца</div>
+        <div class="plan-price">219 ₽</div>
+      </div>
+      <div class="plan-card" onclick="selectPlan('m6', 399)">
+        <div class="plan-title">6 Месяцев</div>
+        <div class="plan-price">399 ₽</div>
+      </div>
+    </div>
+
+    <button class="btn btn-outline" onclick="openSupport()">💬 Служба поддержки</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const user = tg.initDataUnsafe?.user;
+    if (user) {
+      document.getElementById('user-id').innerText = `ID: ${user.id}`;
+    }
+
+    function selectPlan(planKey, price) {
+      if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+      tg.sendData(JSON.stringify({ action: 'buy_plan', plan: planKey, price: price }));
+    }
+
+    function openSupport() {
+      tg.sendData(JSON.stringify({ action: 'open_support' }));
+    }
+  </script>
+</body>
+</html>

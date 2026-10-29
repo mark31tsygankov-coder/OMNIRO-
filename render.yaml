@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: omniro-vpn-bot
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DB_PATH
+        value: /data/bot.db
+      - key: H1CLOUD_API_URL
+        value: https://s-25154.pl7.h1clayd.click/api
+      - key: ROLLYPAY_TERMINAL_ID
+        value: d21c4db8-e234-4a9b-a00a-2194420af7df
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: ROLLYPAY_API_KEY
+        sync: false
+      - key: ROLLYPAY_SIGNING_SECRET
+        sync: false
+      - key: H1CLOUD_API_TOKEN
+        sync: false
+      - key: SUPPORT_USERNAME
+        sync: false
