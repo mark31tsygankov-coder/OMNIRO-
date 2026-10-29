@@ -225,19 +225,21 @@ async def cmd_app(message: Message):
         reply_markup=open_app_kb(message.from_user.id)
     )
 
-# ==================== ADMIN (только для админов) ====================
+# ==================== ADMIN ====================
 @dp.callback_query(F.data == "admin")
 async def cb_admin(callback: CallbackQuery):
     if callback.from_user.id not in ADMIN_IDS:
         return await callback.answer("Нет доступа", show_alert=True)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Статистика", callback_data="adm_stats")],
-        [InlineKeyboardButton(text="Создать промокод", callback_data="adm_promo")],
+        [InlineKeyboardButton(text="Найти пользователя", callback_data="adm_find")],
+        [InlineKeyboardButton(text="Пополнить баланс", callback_data="adm_balance")],
         [InlineKeyboardButton(text="Выдать подписку", callback_data="adm_give")],
+        [InlineKeyboardButton(text="Создать промокод", callback_data="adm_promo")],
         [InlineKeyboardButton(text="Рассылка", callback_data="adm_broadcast")],
         [InlineKeyboardButton(text="Закрыть", callback_data="adm_close")],
     ])
-    await callback.message.edit_text("<b>Админ-панель</b>", reply_markup=kb)
+    await callback.message.edit_text("<b>Админ-панель</b>\nПолное управление", reply_markup=kb)
     await callback.answer()
 
 @dp.callback_query(F.data == "adm_close")
@@ -262,26 +264,216 @@ async def adm_stats(callback: CallbackQuery):
     pays = c.fetchone()[0]
     c.execute("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='paid'")
     total = c.fetchone()[0]
+    c.execute("SELECT COALESCE(SUM(balance),0) FROM users")
+    balances = c.fetchone()[0]
     conn.close()
     await callback.message.edit_text(
         f"<b>Статистика</b>\n\n"
         f"Пользователей: <b>{users}</b>\n"
         f"Подписок: <b>{subs}</b>\n"
         f"Оплат: <b>{pays}</b>\n"
-        f"Сумма: <b>{total:.0f} ₽</b>",
+        f"Оборот: <b>{total:.0f} ₽</b>\n"
+        f"Сумма балансов: <b>{balances:.0f} ₽</b>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Назад", callback_data="admin")]
         ])
     )
     await callback.answer()
 
+# --- Найти пользователя ---
+class AdminStates(StatesGroup):
+    wait_promo = State()
+    wait_broadcast = State()
+    wait_give_sub = State()
+    wait_find = State()
+    wait_balance = State()
+    wait_balance_amount = State()
+
+@dp.callback_query(F.data == "adm_find")
+async def adm_find(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_find)
+    await callback.message.edit_text("Отправь <b>user_id</b> или <b>@username</b>:")
+    await callback.answer()
+
+@dp.message(AdminStates.wait_find)
+async def process_find(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    q = message.text.strip().lstrip("@")
+    conn = get_db()
+    c = conn.cursor()
+    if q.isdigit():
+        c.execute("SELECT user_id, username, first_name, balance, trial_used, created_at FROM users WHERE user_id=?", (int(q),))
+    else:
+        c.execute("SELECT user_id, username, first_name, balance, trial_used, created_at FROM users WHERE lower(username)=?", (q.lower(),))
+    u = c.fetchone()
+    if not u:
+        conn.close()
+        await message.answer("Пользователь не найден", reply_markup=open_app_kb(message.from_user.id))
+        await state.clear()
+        return
+
+    c.execute("SELECT id, key_name, tariff, expires_at FROM subscriptions WHERE user_id=? ORDER BY id DESC", (u[0],))
+    subs = c.fetchall()
+    conn.close()
+
+    text = (
+        f"<b>Пользователь</b>\n\n"
+        f"ID: <code>{u[0]}</code>\n"
+        f"Username: @{u[1] or '—'}\n"
+        f"Имя: {u[2] or '—'}\n"
+        f"Баланс: <b>{u[3]:.2f} ₽</b>\n"
+        f"Пробный: {'да' if u[4] else 'нет'}\n"
+        f"Регистрация: {u[5][:10] if u[5] else '—'}\n\n"
+        f"<b>Подписки ({len(subs)}):</b>\n"
+    )
+    for s in subs:
+        text += f"• #{s[0]} {s[2]} · {s[1]} · до {s[3][:10]}\n"
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Пополнить баланс", callback_data=f"adm_bal_{u[0]}")],
+        [InlineKeyboardButton(text="Выдать подписку", callback_data=f"adm_give_{u[0]}")],
+        [InlineKeyboardButton(text="Назад", callback_data="admin")],
+    ])
+    await message.answer(text, reply_markup=kb)
+    await state.clear()
+
+# --- Пополнить баланс ---
+@dp.callback_query(F.data == "adm_balance")
+async def adm_balance(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_balance)
+    await callback.message.edit_text("Отправь: <code>USER_ID СУММА</code>\nПример: <code>123456789 500</code>")
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("adm_bal_"))
+async def adm_bal_user(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    uid = int(callback.data.split("_")[2])
+    await state.update_data(balance_uid=uid)
+    await state.set_state(AdminStates.wait_balance_amount)
+    await callback.message.edit_text(f"Сколько начислить пользователю <code>{uid}</code>?\nОтправь число (например 500)")
+    await callback.answer()
+
+@dp.message(AdminStates.wait_balance)
+async def process_balance(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        parts = message.text.strip().split()
+        uid, amount = int(parts[0]), float(parts[1])
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amount, uid))
+        if c.rowcount == 0:
+            c.execute("INSERT INTO users (user_id, balance, created_at) VALUES (?, ?, ?)",
+                      (uid, amount, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+        try:
+            await bot.send_message(uid, f"Вам начислено <b>{amount:.0f} ₽</b> на баланс")
+        except:
+            pass
+        await message.answer(f"Баланс пользователя {uid} пополнен на <b>{amount:.0f} ₽</b>",
+                             reply_markup=open_app_kb(message.from_user.id))
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+    await state.clear()
+
+@dp.message(AdminStates.wait_balance_amount)
+async def process_balance_amount(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        amount = float(message.text.strip())
+        data = await state.get_data()
+        uid = data["balance_uid"]
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amount, uid))
+        conn.commit()
+        conn.close()
+        try:
+            await bot.send_message(uid, f"Вам начислено <b>{amount:.0f} ₽</b> на баланс")
+        except:
+            pass
+        await message.answer(f"Баланс {uid} +{amount:.0f} ₽", reply_markup=open_app_kb(message.from_user.id))
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+    await state.clear()
+
+# --- Выдать подписку ---
+@dp.callback_query(F.data == "adm_give")
+async def adm_give(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    await state.set_state(AdminStates.wait_give_sub)
+    await callback.message.edit_text(
+        "Отправь: <code>USER_ID ТАРИФ</code>\nПример: <code>123456789 1m</code>\nТарифы: trial, 1m, 3m, 6m, 12m"
+    )
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("adm_give_"))
+async def adm_give_user(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id not in ADMIN_IDS:
+        return
+    uid = int(callback.data.split("_")[2])
+    await state.update_data(give_uid=uid)
+    await state.set_state(AdminStates.wait_give_sub)
+    await callback.message.edit_text(
+        f"Тариф для <code>{uid}</code>:\nОтправь: <code>trial</code> / <code>1m</code> / <code>3m</code> / <code>6m</code> / <code>12m</code>"
+    )
+    await callback.answer()
+
+@dp.message(AdminStates.wait_give_sub)
+async def process_give(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMIN_IDS:
+        return
+    try:
+        data = await state.get_data()
+        if "give_uid" in data:
+            uid = data["give_uid"]
+            tariff_key = message.text.strip()
+        else:
+            parts = message.text.strip().split()
+            uid, tariff_key = int(parts[0]), parts[1]
+
+        if tariff_key not in TARIFFS:
+            await message.answer("Неверный тариф")
+            await state.clear()
+            return
+
+        t = TARIFFS[tariff_key]
+        key_name = f"adm_{uid}_{uuid.uuid4().hex[:6]}"
+        result = await h1_create_client(key_name, t["days"], t.get("traffic_gb", 0), t.get("devices", 0))
+        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
+        expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at)
+                     VALUES (?,?,?,?,?,?)""", (uid, key_name, config, tariff_key, expires, datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+        await bot.send_message(uid, f"<b>Вам выдана подписка!</b>\n\nТариф: {t['name']}\n<code>{config}</code>")
+        await message.answer(f"Подписка <b>{tariff_key}</b> выдана {uid}", reply_markup=open_app_kb(message.from_user.id))
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+    await state.clear()
+
+# --- Промокод ---
 @dp.callback_query(F.data == "adm_promo")
 async def adm_promo(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
         return
     await state.set_state(AdminStates.wait_promo)
     await callback.message.edit_text(
-        "Отправь промокод:\n<code>КОД СКИДКА% МАКС_ИСПОЛЬЗОВАНИЙ</code>\n\nПример: <code>OMNI20 20 100</code>"
+        "Отправь: <code>КОД СКИДКА% МАКС_ИСПОЛЬЗОВАНИЙ</code>\nПример: <code>OMNI20 20 100</code>"
     )
     await callback.answer()
 
@@ -298,50 +490,12 @@ async def process_promo(message: Message, state: FSMContext):
                   (code, discount, max_uses))
         conn.commit()
         conn.close()
-        await message.answer(f"Промокод <b>{code}</b> создан (скидка {discount}%, до {max_uses} исп.)",
-                             reply_markup=open_app_kb(message.from_user.id))
+        await message.answer(f"Промокод <b>{code}</b> создан", reply_markup=open_app_kb(message.from_user.id))
     except:
-        await message.answer("Ошибка формата. Пример: <code>OMNI20 20 100</code>")
+        await message.answer("Ошибка формата")
     await state.clear()
 
-@dp.callback_query(F.data == "adm_give")
-async def adm_give(callback: CallbackQuery, state: FSMContext):
-    if callback.from_user.id not in ADMIN_IDS:
-        return
-    await state.set_state(AdminStates.wait_give_sub)
-    await callback.message.edit_text(
-        "Отправь: <code>USER_ID ТАРИФ</code>\nПример: <code>123456789 1m</code>\nТарифы: trial, 1m, 3m, 6m, 12m"
-    )
-    await callback.answer()
-
-@dp.message(AdminStates.wait_give_sub)
-async def process_give(message: Message, state: FSMContext):
-    if message.from_user.id not in ADMIN_IDS:
-        return
-    try:
-        parts = message.text.strip().split()
-        uid, tariff_key = int(parts[0]), parts[1]
-        if tariff_key not in TARIFFS:
-            await message.answer("Неверный тариф")
-            await state.clear()
-            return
-        t = TARIFFS[tariff_key]
-        key_name = f"adm_{uid}_{uuid.uuid4().hex[:6]}"
-        result = await h1_create_client(key_name, t["days"], t.get("traffic_gb", 0), t.get("devices", 0))
-        config = result.get("config") or result.get("link") or result.get("vless") or str(result)
-        expires = (datetime.now() + timedelta(days=t["days"])).isoformat()
-        conn = get_db()
-        c = conn.cursor()
-        c.execute("""INSERT INTO subscriptions (user_id, key_name, config, tariff, expires_at, created_at)
-                     VALUES (?,?,?,?,?,?)""", (uid, key_name, config, tariff_key, expires, datetime.now().isoformat()))
-        conn.commit()
-        conn.close()
-        await bot.send_message(uid, f"<b>Вам выдана подписка!</b>\n\nТариф: {t['name']}\n<code>{config}</code>")
-        await message.answer(f"Подписка {tariff_key} выдана {uid}", reply_markup=open_app_kb(message.from_user.id))
-    except Exception as e:
-        await message.answer(f"Ошибка: {e}")
-    await state.clear()
-
+# --- Рассылка ---
 @dp.callback_query(F.data == "adm_broadcast")
 async def adm_broadcast(callback: CallbackQuery, state: FSMContext):
     if callback.from_user.id not in ADMIN_IDS:
@@ -366,9 +520,8 @@ async def process_broadcast(message: Message, state: FSMContext):
             ok += 1
         except:
             pass
-    await message.answer(f"Рассылка завершена: {ok}/{len(users)}", reply_markup=open_app_kb(message.from_user.id))
+    await message.answer(f"Рассылка: {ok}/{len(users)}", reply_markup=open_app_kb(message.from_user.id))
     await state.clear()
-
 # ==================== LIFESPAN ====================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
