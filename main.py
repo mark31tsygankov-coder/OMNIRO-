@@ -17,7 +17,7 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
@@ -337,8 +337,6 @@ async def refs_cb(cb: CallbackQuery):
 async def support_cb(cb: CallbackQuery):
     text = "Служба поддержки\n\nЕсли у вас возникли вопросы, обратитесь к администратору."
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="menu")]])
-    if SUPPORT_USERNAME:
-        kb.inline_keyboard.insert(0, [InlineKeyboardButton(text="Написать в Telegram", url=f"https://t.me/{SUPPORT_USERNAME}")])
     await cb.message.edit_text(text, reply_markup=kb)
     await cb.answer()
 
