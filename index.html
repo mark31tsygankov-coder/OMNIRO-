@@ -1,351 +1,463 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OMNIRO VPN</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <style>
-        :root {
-            --bg: #f5f7fa;
-            --card: #ffffff;
-            --primary: #3b82f6;
-            --primary-dark: #2563eb;
-            --text: #1e293b;
-            --muted: #64748b;
-            --success: #10b981;
-            --radius: 18px;
-            --shadow: 0 4px 20px rgba(0,0,0,0.06);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            padding-bottom: 40px;
-        }
-        .header {
-            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-            color: white;
-            padding: 28px 20px 40px;
-            border-radius: 0 0 28px 28px;
-            text-align: center;
-        }
-        .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-        .header p { opacity: 0.9; font-size: 15px; }
-        .container { padding: 0 16px; margin-top: -24px; }
-        .card {
-            background: var(--card);
-            border-radius: var(--radius);
-            padding: 20px;
-            margin-bottom: 16px;
-            box-shadow: var(--shadow);
-        }
-        .card-title {
-            font-size: 17px;
-            font-weight: 600;
-            margin-bottom: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .btn {
-            display: block;
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-align: center;
-            text-decoration: none;
-            color: white;
-            background: var(--primary);
-        }
-        .btn:active { transform: scale(0.98); }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-        .btn-success { background: linear-gradient(135deg, #10b981, #059669); }
-        .btn-outline {
-            background: white;
-            color: var(--primary);
-            border: 2px solid #e2e8f0;
-        }
-        .tariff-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-        .tariff {
-            background: #f8fafc;
-            border: 2px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 16px 12px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .tariff.active {
-            border-color: var(--primary);
-            background: #eff6ff;
-        }
-        .tariff .name { font-weight: 600; font-size: 15px; }
-        .tariff .price { font-size: 20px; font-weight: 700; color: var(--primary); margin: 6px 0; }
-        .tariff .days { font-size: 13px; color: var(--muted); }
-        .input {
-            width: 100%;
-            padding: 14px 16px;
-            border: 2px solid #e2e8f0;
-            border-radius: 14px;
-            font-size: 16px;
-            margin-bottom: 12px;
-            outline: none;
-        }
-        .input:focus { border-color: var(--primary); }
-        .sub-item {
-            background: #f8fafc;
-            border-radius: 14px;
-            padding: 14px;
-            margin-bottom: 10px;
-        }
-        .sub-item .key { font-family: monospace; font-size: 13px; word-break: break-all; }
-        .badge {
-            display: inline-block;
-            background: #dbeafe;
-            color: #1d4ed8;
-            font-size: 12px;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-        .hidden { display: none !important; }
-        .tab-bar {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 16px;
-            overflow-x: auto;
-            padding-bottom: 4px;
-        }
-        .tab {
-            flex-shrink: 0;
-            padding: 10px 18px;
-            border-radius: 12px;
-            background: white;
-            border: 2px solid #e2e8f0;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: pointer;
-        }
-        .tab.active {
-            background: var(--primary);
-            color: white;
-            border-color: var(--primary);
-        }
-        .success-msg {
-            background: #ecfdf5;
-            color: #065f46;
-            padding: 16px;
-            border-radius: 14px;
-            text-align: center;
-            margin-bottom: 16px;
-            font-weight: 500;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>OMNIRO VPN</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+:root {
+  --bg: #0a0a0a;
+  --card: #141414;
+  --border: #262626;
+  --text: #f5f5f5;
+  --muted: #a3a3a3;
+  --accent: #ffffff;
+  --green: #22c55e;
+  --red: #ef4444;
+  --radius: 16px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 50px;
+}
+.header {
+  padding: 32px 20px 28px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.header p { color: var(--muted); margin-top: 6px; font-size: 14px; }
+.container { padding: 20px 16px; }
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.tariff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.tariff {
+  background: #1a1a1a;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.tariff.active {
+  border-color: #fff;
+  background: #222;
+}
+.tariff .name { font-size: 14px; font-weight: 500; }
+.tariff .price { font-size: 22px; font-weight: 700; margin: 6px 0 2px; }
+.tariff .days { font-size: 12px; color: var(--muted); }
+.btn {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 14px;
+}
+.btn-primary { background: #fff; color: #000; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-outline {
+  background: transparent;
+  color: #fff;
+  border: 1.5px solid var(--border);
+}
+.input {
+  width: 100%;
+  padding: 14px 16px;
+  background: #1a1a1a;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 16px;
+  outline: none;
+  margin-bottom: 10px;
+}
+.input:focus { border-color: #555; }
+.sub {
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.sub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.badge {
+  background: #262626;
+  color: #fff;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.sub-config {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--muted);
+  margin: 10px 0;
+  max-height: 60px;
+  overflow: hidden;
+}
+.sub-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sub-actions button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #111;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.qr-box { text-align: center; margin: 16px 0; }
+.qr-box canvas { border-radius: 12px; }
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #262626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+}
+.hidden { display: none !important; }
+.success {
+  background: #0f2a1a;
+  border: 1px solid #166534;
+  color: #4ade80;
+  padding: 14px;
+  border-radius: 12px;
+  text-align: center;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+.empty { text-align: center; color: var(--muted); padding: 30px 0; }
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>OMNIRO VPN</h1>
-        <p>Быстрый • Стабильный • Анонимный</p>
+<div class="header">
+  <h1>OMNIRO</h1>
+  <p>Premium VPN</p>
+</div>
+
+<div class="container">
+  <div id="paid-ok" class="success hidden">Оплата прошла. Ключ появится ниже через пару секунд.</div>
+
+  <div class="tabs">
+    <div class="tab active" data-t="buy">Купить</div>
+    <div class="tab" data-t="subs">Подписки</div>
+    <div class="tab" data-t="gift">Подарить</div>
+    <div class="tab" data-t="profile">Профиль</div>
+  </div>
+
+  <div id="p-buy">
+    <div class="card">
+      <div class="card-title">Тарифы</div>
+      <div class="tariff-grid" id="tariffs"></div>
+      <input class="input" id="promo" placeholder="Промокод" style="margin-top:14px">
+      <button class="btn btn-primary" id="pay-btn">Оплатить</button>
     </div>
+  </div>
 
-    <div class="container">
-        <div id="paid-success" class="success-msg hidden">
-            ✅ Оплата прошла! Ключ отправлен в бот.
-        </div>
-
-        <div class="tab-bar">
-            <div class="tab active" data-tab="buy">Купить</div>
-            <div class="tab" data-tab="subs">Мои подписки</div>
-            <div class="tab" data-tab="gift">Подарить</div>
-            <div class="tab" data-tab="promo">Промокод</div>
-        </div>
-
-        <!-- BUY -->
-        <div id="tab-buy" class="card">
-            <div class="card-title">📦 Выбери тариф</div>
-            <div class="tariff-grid" id="tariffs"></div>
-            <div style="margin-top: 16px;">
-                <input class="input" id="promo-input" placeholder="Промокод (если есть)">
-                <button class="btn btn-primary" id="btn-pay">Оплатить</button>
-            </div>
-        </div>
-
-        <!-- SUBS -->
-        <div id="tab-subs" class="card hidden">
-            <div class="card-title">🔑 Мои подписки</div>
-            <div id="subs-list">Загрузка...</div>
-        </div>
-
-        <!-- GIFT -->
-        <div id="tab-gift" class="card hidden">
-            <div class="card-title">🎁 Подарить подписку</div>
-            <input class="input" id="gift-username" placeholder="@username друга">
-            <div class="tariff-grid" id="gift-tariffs"></div>
-            <button class="btn btn-success" id="btn-gift" style="margin-top: 16px;">Подарить</button>
-        </div>
-
-        <!-- PROMO -->
-        <div id="tab-promo" class="card hidden">
-            <div class="card-title">🏷 Промокод</div>
-            <input class="input" id="promo-check" placeholder="Введи промокод">
-            <button class="btn btn-outline" id="btn-check-promo">Проверить</button>
-            <div id="promo-result" style="margin-top: 12px; text-align: center;"></div>
-        </div>
-
-        <!-- SUPPORT -->
-        <div class="card" style="text-align: center;">
-            <div class="card-title" style="justify-content: center;">💬 Поддержка</div>
-            <a class="btn btn-outline" id="support-btn" href="#">Написать в поддержку</a>
-            <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
-                <a href="#" id="policy" style="color: var(--muted);">Политика</a> · 
-                <a href="#" id="offer" style="color: var(--muted);">Оферта</a>
-            </div>
-        </div>
+  <div id="p-subs" class="hidden">
+    <div class="card">
+      <div class="card-title">Мои подписки</div>
+      <div id="subs-list"><div class="empty">Загрузка...</div></div>
     </div>
+  </div>
 
-    <script>
-        const tg = window.Telegram.WebApp;
-        tg.ready();
-        tg.expand();
-        tg.setHeaderColor('#1d4ed8');
-        tg.setBackgroundColor('#f5f7fa');
+  <div id="p-gift" class="hidden">
+    <div class="card">
+      <div class="card-title">Подарить другу</div>
+      <input class="input" id="gift-user" placeholder="@username">
+      <div id="gift-check" style="font-size:13px;margin-bottom:12px;color:var(--muted)"></div>
+      <div class="tariff-grid" id="gift-tariffs"></div>
+      <button class="btn btn-primary" id="gift-btn">Подарить</button>
+    </div>
+  </div>
 
-        const user = tg.initDataUnsafe?.user || {};
-        const userId = user.id;
-        let selectedTariff = '1m';
-        let selectedGiftTariff = '1m';
-        let tariffs = {};
+  <div id="p-profile" class="hidden">
+    <div class="card">
+      <div class="card-title">Профиль</div>
+      <div class="profile">
+        <div class="avatar" id="av">?</div>
+        <div>
+          <div style="font-weight:600;font-size:17px" id="pname">—</div>
+          <div style="color:var(--muted);font-size:14px" id="puname">—</div>
+        </div>
+      </div>
+      <div style="margin-top:16px;font-size:13px;color:var(--muted)" id="pdate"></div>
+    </div>
+    <div class="card" style="text-align:center">
+      <a class="btn btn-outline" id="support" href="#" style="text-decoration:none;display:block">Поддержка</a>
+      <div style="margin-top:14px;font-size:12px;color:#555">
+        <a href="https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99" style="color:#555">Политика</a> · 
+        <a href="https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15" style="color:#555">Оферта</a>
+      </div>
+    </div>
+  </div>
+</div>
 
-        // Tabs
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.onclick = () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                document.querySelectorAll('[id^=tab-]').forEach(el => el.classList.add('hidden'));
-                document.getElementById('tab-' + tab.dataset.tab).classList.remove('hidden');
-            };
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+tg.setHeaderColor('#0a0a0a');
+tg.setBackgroundColor('#0a0a0a');
+
+const user = tg.initDataUnsafe?.user || {};
+const uid = user.id;
+let selected = '1m';
+let giftSelected = '1m';
+let tariffs = {};
+let subs = [];
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    ['buy','subs','gift','profile'].forEach(p => {
+      document.getElementById('p-'+p).classList.toggle('hidden', p !== t.dataset.t);
+    });
+    if (t.dataset.t === 'subs') renderSubs();
+  };
+});
+
+async function load() {
+  if (!uid) return;
+  const r = await fetch(`/api/me?user_id=${uid}`);
+  const d = await r.json();
+  tariffs = d.tariffs;
+  subs = d.subscriptions;
+
+  document.getElementById('pname').textContent = d.first_name || 'Пользователь';
+  document.getElementById('puname').textContent = d.username ? '@'+d.username : 'ID '+uid;
+  document.getElementById('av').textContent = (d.first_name || 'U')[0].toUpperCase();
+  if (d.created_at) document.getElementById('pdate').textContent = 'С нами с ' + d.created_at.slice(0,10);
+
+  const grid = document.getElementById('tariffs');
+  const ggrid = document.getElementById('gift-tariffs');
+  grid.innerHTML = ggrid.innerHTML = '';
+  for (const [k,t] of Object.entries(tariffs)) {
+    const el = document.createElement('div');
+    el.className = 'tariff' + (k==='1m'?' active':'');
+    el.innerHTML = `<div class="name">${t.name}</div><div class="price">${t.price}₽</div><div class="days">${t.days} дн.</div>`;
+    el.onclick = () => {
+      document.querySelectorAll('#tariffs .tariff').forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      selected = k;
+    };
+    grid.appendChild(el);
+
+    const ge = el.cloneNode(true);
+    ge.onclick = () => {
+      document.querySelectorAll('#gift-tariffs .tariff').forEach(e => e.classList.remove('active'));
+      ge.classList.add('active');
+      giftSelected = k;
+    };
+    ggrid.appendChild(ge);
+  }
+  renderSubs();
+}
+
+function renderSubs() {
+  const box = document.getElementById('subs-list');
+  if (!subs.length) {
+    box.innerHTML = '<div class="empty">Подписок пока нет</div>';
+    return;
+  }
+  box.innerHTML = subs.map(s => `
+    <div class="sub">
+      <div class="sub-header">
+        <span class="badge">${s.tariff_name}</span>
+        <span style="font-size:13px;color:var(--muted)">до ${s.expires_at.slice(0,10)}</span>
+      </div>
+      <div class="sub-config">${s.config || s.key_name}</div>
+      <div class="qr-box" id="qr-${s.id}"></div>
+      <div class="sub-actions">
+        <button onclick="copyCfg(${s.id})">Копировать</button>
+        <button onclick="renew(${s.id})">Продлить</button>
+        <button onclick="delSub(${s.id})" style="color:#ef4444">Удалить</button>
+      </div>
+    </div>
+  `).join('');
+
+  subs.forEach(s => {
+    if (s.config && (s.config.startsWith('vless://') || s.config.startsWith('ss://') || s.config.includes('://'))) {
+      const el = document.getElementById('qr-'+s.id);
+      if (el) {
+        QRCode.toCanvas(document.createElement('canvas'), s.config, {
+          width: 160, margin: 1,
+          color: { dark: '#ffffff', light: '#141414' }
+        }, (err, canvas) => {
+          if (!err) {
+            canvas.style.borderRadius = '12px';
+            el.appendChild(canvas);
+          }
         });
+      }
+    }
+  });
+}
 
-        // Load data
-        async function loadUser() {
-            if (!userId) return;
-            const res = await fetch(`/api/user?user_id=${userId}`);
-            const data = await res.json();
-            tariffs = data.tariffs;
+window.copyCfg = (id) => {
+  const s = subs.find(x => x.id == id);
+  if (s) {
+    navigator.clipboard.writeText(s.config || s.key_name);
+    tg.showPopup({ title: 'Скопировано', message: 'Конфиг скопирован', buttons: [{type:'ok'}] });
+  }
+};
 
-            // Tariffs
-            const grid = document.getElementById('tariffs');
-            const giftGrid = document.getElementById('gift-tariffs');
-            grid.innerHTML = '';
-            giftGrid.innerHTML = '';
-            for (const [k, t] of Object.entries(tariffs)) {
-                const el = document.createElement('div');
-                el.className = 'tariff' + (k === '1m' ? ' active' : '');
-                el.innerHTML = `<div class="name">${t.name}</div><div class="price">${t.price} ₽</div><div class="days">${t.days} дней</div>`;
-                el.onclick = () => {
-                    document.querySelectorAll('#tariffs .tariff').forEach(e => e.classList.remove('active'));
-                    el.classList.add('active');
-                    selectedTariff = k;
-                };
-                grid.appendChild(el);
+window.renew = async (id) => {
+  const r = await fetch('/api/renew', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: uid, sub_id: id})
+  });
+  const d = await r.json();
+  if (d.pay_url) tg.openLink(d.pay_url);
+};
 
-                const gel = el.cloneNode(true);
-                gel.onclick = () => {
-                    document.querySelectorAll('#gift-tariffs .tariff').forEach(e => e.classList.remove('active'));
-                    gel.classList.add('active');
-                    selectedGiftTariff = k;
-                };
-                giftGrid.appendChild(gel);
-            }
+window.delSub = async (id) => {
+  if (!confirm('Удалить подписку? Ключ будет отозван.')) return;
+  await fetch('/api/delete_sub', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({user_id: uid, sub_id: id})
+  });
+  await load();
+};
 
-            // Subs
-            const list = document.getElementById('subs-list');
-            if (!data.subscriptions.length) {
-                list.innerHTML = '<p style="color:#64748b;text-align:center;">Подписок пока нет</p>';
-            } else {
-                list.innerHTML = data.subscriptions.map(s => `
-                    <div class="sub-item">
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                            <span class="badge">${tariffs[s.tariff]?.name || s.tariff}</span>
-                            <span style="font-size:13px;color:#64748b;">до ${s.expires_at.slice(0,10)}</span>
-                        </div>
-                        <div class="key">${s.config || s.key_name}</div>
-                    </div>
-                `).join('');
-            }
-        }
+document.getElementById('pay-btn').onclick = async () => {
+  const btn = document.getElementById('pay-btn');
+  btn.disabled = true;
+  btn.textContent = 'Создаём...';
+  try {
+    const r = await fetch('/api/create_payment', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        user_id: uid,
+        tariff: selected,
+        promo: document.getElementById('promo').value
+      })
+    });
+    const d = await r.json();
+    if (d.pay_url) tg.openLink(d.pay_url);
+    else alert('Ошибка создания платежа');
+  } catch(e) {
+    alert(e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Оплатить';
+};
 
-        // Pay
-        document.getElementById('btn-pay').onclick = async () => {
-            const promo = document.getElementById('promo-input').value.trim();
-            const btn = document.getElementById('btn-pay');
-            btn.disabled = true;
-            btn.textContent = 'Создаём платёж...';
-            try {
-                const res = await fetch('/api/create_payment', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user_id: userId, tariff: selectedTariff, promo })
-                });
-                const data = await res.json();
-                if (data.pay_url) {
-                    tg.openLink(data.pay_url);
-                } else {
-                    alert('Ошибка создания платежа');
-                }
-            } catch (e) {
-                alert('Ошибка: ' + e.message);
-            }
-            btn.disabled = false;
-            btn.textContent = 'Оплатить';
-        };
+document.getElementById('gift-user').oninput = async function() {
+  const v = this.value.trim();
+  const el = document.getElementById('gift-check');
+  if (v.length < 3) { el.textContent = ''; return; }
+  const r = await fetch(`/api/check_user?username=${encodeURIComponent(v)}`);
+  const d = await r.json();
+  el.textContent = d.exists ? `Найден: ${d.first_name}` : 'Пользователь не найден (должен написать /start)';
+  el.style.color = d.exists ? '#22c55e' : '#ef4444';
+};
 
-        // Gift
-        document.getElementById('btn-gift').onclick = async () => {
-            const to = document.getElementById('gift-username').value.trim();
-            if (!to) return alert('Укажи @username');
-            const res = await fetch('/api/create_payment', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ user_id: userId, tariff: selectedGiftTariff, is_gift: true, gift_to: to })
-            });
-            const data = await res.json();
-            if (data.pay_url) tg.openLink(data.pay_url);
-        };
+document.getElementById('gift-btn').onclick = async () => {
+  const to = document.getElementById('gift-user').value.trim();
+  if (!to) return alert('Укажи @username');
+  const r = await fetch('/api/create_payment', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      user_id: uid,
+      tariff: giftSelected,
+      is_gift: true,
+      gift_to: to
+    })
+  });
+  if (!r.ok) {
+    const e = await r.json();
+    return alert(e.detail || 'Ошибка');
+  }
+  const d = await r.json();
+  if (d.pay_url) tg.openLink(d.pay_url);
+};
 
-        // Promo check
-        document.getElementById('btn-check-promo').onclick = async () => {
-            const code = document.getElementById('promo-check').value.trim();
-            const res = await fetch(`/api/promocode?code=${code}`);
-            const data = await res.json();
-            document.getElementById('promo-result').innerHTML = data.valid
-                ? `<span style="color:#059669;font-weight:600;">Скидка ${data.discount}%</span>`
-                : `<span style="color:#dc2626;">Промокод недействителен</span>`;
-        };
+if (new URLSearchParams(location.search).get('paid') === '1') {
+  document.getElementById('paid-ok').classList.remove('hidden');
+  setTimeout(load, 2500);
+}
 
-        // Support & links
-        document.getElementById('support-btn').href = 'https://t.me/' + (tg.initDataUnsafe?.user ? '' : '');
-        document.getElementById('policy').href = 'https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99';
-        document.getElementById('offer').href = 'https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15';
+document.getElementById('support').href = 'https://t.me/' + ('' || 'support');
 
-        // Paid redirect
-        if (new URLSearchParams(location.search).get('paid') === '1') {
-            document.getElementById('paid-success').classList.remove('hidden');
-        }
-
-        loadUser();
-    </script>
+load();
+</script>
 </body>
 </html>
