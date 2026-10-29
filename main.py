@@ -13,34 +13,31 @@ import uuid
 
 import aiosqlite
 from aiohttp import ClientSession, ClientTimeout, web
-from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BotCommand, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("bot")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8708312537:AAG1yrOZc5SWyl2JFXxsNQKE4ga8-Dl7ZRA")
-ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "8995385837").split(",") if i.strip()]
-RP_KEY = os.getenv("ROLLYPAY_API_KEY", "Y9ZGC5UCRFgCloE-uluVczR7o12ju6GTb-oRyHaBqRk")
-RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "akjiGkcHyj6dt_WmzbSYeBBorTOnvZ1ucGQzl0BFGdk")
-RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "d21c4db8-e234-4a9b-a00a-2194420af7df")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_IDS = [int(i) for i in os.getenv("ADMIN_IDS", "").split(",") if i.strip()]
+RP_KEY = os.getenv("ROLLYPAY_API_KEY", "")
+RP_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "")
+RP_TERMINAL = os.getenv("ROLLYPAY_TERMINAL_ID", "")
 RP_BASE = os.getenv("ROLLYPAY_BASE_URL", "https://rollypay.io")
 ALLOW_TEST = os.getenv("ALLOW_TEST_PAYMENTS", "0") == "1"
-H1_URL = os.getenv("H1CLOUD_API_URL", "https://s-25154.pl7.h1clayd.click/api").rstrip("/")
-H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "2ead850e5fe347fa9ed81f7838d64fc5590facdea2b94737ba7fff788bd55bb8")
+H1_URL = os.getenv("H1CLOUD_API_URL", "").rstrip("/")
+H1_TOKEN = os.getenv("H1CLOUD_API_TOKEN", "")
 BASE_URL = (os.getenv("BASE_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
-SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "").lstrip("@")
 DB_PATH = os.getenv("DB_PATH", "bot.db")
 PORT = int(os.getenv("PORT", "10000"))
 TG_SECRET = hashlib.sha256(BOT_TOKEN.encode()).hexdigest()[:48]
-BRAND = "OMNIRO VPN"
+BRAND = "VPN SERVICE"
 MINI_APP_URL = os.getenv("MINI_APP_URL", "https://botvpnzayou.onrender.com")
 
 PLANS = {
@@ -52,6 +49,7 @@ PLANS = {
 bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 router = Router()
+dp.include_router(router)
 
 db = None
 http = None
@@ -203,23 +201,59 @@ async def rp_create_payment(order_id, amount, desc, uid, me_username):
 def main_kb(uid):
     b = InlineKeyboardBuilder()
     if MINI_APP_URL:
-        b.button(text="⚡ OMNIRO App", web_app=WebAppInfo(url=MINI_APP_URL))
-    b.button(text="🛒 Купить VPN", callback_data="buy")
-    b.button(text="📦 Мои подписки", callback_data="my_subs")
-    b.button(text="👥 Рефералы", callback_data="refs")
-    b.button(text="🎟 Промокод", callback_data="promo")
-    b.button(text="🆘 Поддержка", callback_data="support")
-    b.adjust(1, 2, 2, 2)
+        b.button(text="Открыть приложение", web_app=WebAppInfo(url=MINI_APP_URL))
+    b.button(text="Купить подписку", callback_data="buy")
+    b.button(text="Мои подписки", callback_data="my_subs")
+    b.button(text="Рефералы", callback_data="refs")
+    b.button(text="Поддержка", callback_data="support")
+    b.adjust(1, 2, 2)
     return b.as_markup()
 
 @router.message(CommandStart())
 async def start(m: Message):
     await upsert_user(m.from_user.id, m.from_user.username)
-    await m.answer(f"👋 Добро пожаловать в <b>{BRAND}</b>!\n\n⚡ Быстрый и стабильный VPN\n🔒 Без логов и ограничений.", reply_markup=main_kb(m.from_user.id))
+    await m.answer(f"Добро пожаловать в {BRAND}.\n\nБыстрый и стабильный VPN без ограничений.", reply_markup=main_kb(m.from_user.id))
 
 @router.callback_query(F.data == "menu")
 async def menu_cb(cb: CallbackQuery):
-    await cb.message.edit_text(f"👋 Главное меню <b>{BRAND}</b>:", reply_markup=main_kb(cb.from_user.id))
+    await cb.message.edit_text(f"Главное меню {BRAND}:", reply_markup=main_kb(cb.from_user.id))
+    await cb.answer()
+
+@router.callback_query(F.data == "buy")
+async def buy_cb(cb: CallbackQuery):
+    b = InlineKeyboardBuilder()
+    for k, (name, _, price) in PLANS.items():
+        b.button(text=f"{name} - {price} руб", callback_data=f"plan:{k}")
+    b.button(text="Назад", callback_data="menu")
+    b.adjust(1)
+    await cb.message.edit_text("Выберите тарифный план:", reply_markup=b.as_markup())
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("plan:"))
+async def plan_selected(cb: CallbackQuery):
+    key = cb.data.split(":")[1]
+    if key not in PLANS:
+        return await cb.answer("Тариф не найден", show_alert=True)
+    name, days, price = PLANS[key]
+    uid = cb.from_user.id
+    order_id = f"o{uid}_{int(time.time())}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=4))}"
+    me = (await bot.me()).username
+    try:
+        p = await rp_create_payment(order_id, price, f"{BRAND}: {name}", uid, me)
+    except Exception as e:
+        log.error("Payment creation error: %s", e)
+        return await cb.answer("Ошибка создания платежа", show_alert=True)
+    
+    await ex(
+        "INSERT INTO orders(order_id,user_id,target_id,plan,days,amount,payment_id,pay_url,status,created) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        order_id, uid, uid, key, days, price, p["payment_id"], p["pay_url"], "pending", int(time.time()),
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"Оплатить {price} руб", url=p["pay_url"])],
+        [InlineKeyboardButton(text="Проверить оплату", callback_data=f"chk:{order_id}")],
+        [InlineKeyboardButton(text="Назад", callback_data="buy")]
+    ])
+    await cb.message.edit_text(f"Заказ создан.\nТариф: {name}\nСумма: {price} руб\n\nНажмите кнопку для оплаты:", reply_markup=kb)
     await cb.answer()
 
 async def process_paid_order(order_id):
@@ -236,29 +270,74 @@ async def process_paid_order(order_id):
         new_exp, link = await grant(target_id, o["days"])
         b = InlineKeyboardBuilder()
         if link:
-            b.button(text="➕ Добавить в приложение", url=link)
-        b.button(text="📦 Мои подписки", callback_data="my_subs")
-        b.button(text="⬅️ Главное меню", callback_data="menu")
+            b.button(text="Добавить в приложение", url=link)
+        b.button(text="Мои подписки", callback_data="my_subs")
+        b.button(text="Главное меню", callback_data="menu")
         b.adjust(1)
         
         if is_gift:
-            # Уведомление получателю
-            gift_text = f"🎁 <b>Вам подарили подписку VPN!</b>\nДействует до: <b>{time.strftime('%d.%m.%Y', time.gmtime(new_exp))}</b>\n\nКлюч:\n<code>{esc(link)}</code>"
+            gift_text = f"Вам подарили подписку VPN.\nДействует до: {time.strftime('%d.%m.%Y', time.gmtime(new_exp))}\n\nКлюч:\n{link}"
             try:
                 await bot.send_message(target_id, gift_text, reply_markup=b.as_markup())
             except Exception:
                 pass
-            # Уведомление дарителю
-            buyer_text = f"✅ <b>Подарок успешно отправлен!</b>\nПользователь <code>{target_id}</code> получил подписку."
+            buyer_text = f"Подарок успешно отправлен пользователю {target_id}."
             try:
                 await bot.send_message(o["user_id"], buyer_text, reply_markup=main_kb(o["user_id"]))
             except Exception:
                 pass
         else:
-            text = f"✅ <b>Оплата успешна!</b>\nПодписка активна до <b>{time.strftime('%d.%m.%Y', time.gmtime(new_exp))}</b>\n\nВаш ключ подключения:\n<code>{esc(link)}</code>"
+            text = f"Оплата прошла успешно.\nПодписка активна до {time.strftime('%d.%m.%Y', time.gmtime(new_exp))}\n\nКлюч подключения:\n{link}"
             await bot.send_message(target_id, text, reply_markup=b.as_markup())
     except Exception as e:
         log.error("Grant error: %s", e)
+
+@router.callback_query(F.data.startswith("chk:"))
+async def check_payment(cb: CallbackQuery):
+    order_id = cb.data.split(":", 1)[1]
+    o = await q1("SELECT * FROM orders WHERE order_id=? AND user_id=?", order_id, cb.from_user.id)
+    if not o:
+        return await cb.answer("Заказ не найден", show_alert=True)
+    if o["status"] == "paid":
+        return await cb.answer("Уже оплачено", show_alert=True)
+    try:
+        p = await rp("GET", f"/api/v1/payments/{o['payment_id']}")
+    except Exception:
+        return await cb.answer("Не удалось проверить статус", show_alert=True)
+    if p.get("status") == "paid":
+        await process_paid_order(order_id)
+        return await cb.answer("Оплата подтверждена. Ключ отправлен.")
+    await cb.answer("Оплата еще не поступила", show_alert=True)
+
+@router.callback_query(F.data == "my_subs")
+async def my_subs_cb(cb: CallbackQuery):
+    u = await get_user(cb.from_user.id)
+    now = int(time.time())
+    if u and u["expires_at"] and u["expires_at"] > now:
+        text = f"Активная подписка до: {time.strftime('%d.%m.%Y', time.gmtime(u['expires_at']))}\n\nКлюч подключения:\n{u['sub_link'] or 'Отсутствует'}"
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="menu")]])
+        await cb.message.edit_text(text, reply_markup=kb)
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Купить", callback_data="buy"), InlineKeyboardButton(text="Назад", callback_data="menu")]])
+        await cb.message.edit_text("У вас нет активных подписок.", reply_markup=kb)
+    await cb.answer()
+
+@router.callback_query(F.data == "refs")
+async def refs_cb(cb: CallbackQuery):
+    link = f"https://t.me/{(await bot.me()).username}?start=ref_{cb.from_user.id}"
+    text = f"Реферальная программа\n\nПриглашайте друзей по вашей ссылке:\n{link}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="menu")]])
+    await cb.message.edit_text(text, reply_markup=kb)
+    await cb.answer()
+
+@router.callback_query(F.data == "support")
+async def support_cb(cb: CallbackQuery):
+    text = "Служба поддержки\n\nЕсли у вас возникли вопросы, обратитесь к администратору."
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="menu")]])
+    if SUPPORT_USERNAME:
+        kb.inline_keyboard.insert(0, [InlineKeyboardButton(text="Написать в Telegram", url=f"https://t.me/{SUPPORT_USERNAME}")])
+    await cb.message.edit_text(text, reply_markup=kb)
+    await cb.answer()
 
 @router.message(F.web_app_data)
 async def web_app_data_handler(m: Message):
@@ -286,43 +365,26 @@ async def web_app_data_handler(m: Message):
                 )
                 
                 kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text=f"💳 Оплатить {price} ₽", url=p["pay_url"])],
-                    [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"chk:{order_id}")]
+                    [InlineKeyboardButton(text=f"Оплатить {price} руб", url=p["pay_url"])],
+                    [InlineKeyboardButton(text="Проверить оплату", callback_data=f"chk:{order_id}")]
                 ])
-                await m.answer(f"🧾 Сформирован заказ{' на подарок' if mode=='gift' else ''}:\nТариф: <b>{name}</b>\nСумма: <b>{price} ₽</b>", reply_markup=kb)
+                await m.answer(f"Сформирован заказ{' на подарок' if mode=='gift' else ''}:\nТариф: {name}\nСумма: {price} руб", reply_markup=kb)
         elif action == "open_my_subs":
             u = await get_user(m.from_user.id)
             now = int(time.time())
             if u and u["expires_at"] and u["expires_at"] > now:
-                await m.answer(f"📦 Ваша подписка активна до: <b>{time.strftime('%d.%m.%Y', time.gmtime(u['expires_at']))}</b>\n\nКлюч:\n<code>{esc(u['sub_link'])}</code>")
+                await m.answer(f"Подписка активна до: {time.strftime('%d.%m.%Y', time.gmtime(u['expires_at']))}\n\nКлюч:\n{u['sub_link']}")
             else:
-                await m.answer("📦 У вас нет активных подписок.")
+                await m.answer("У вас нет активных подписок.")
         elif action == "open_promos":
-            await m.answer("🎟 Введите промокод в чате с ботом.")
+            await m.answer("Введите промокод в чате с ботом.")
         elif action == "open_referrals":
             link = f"https://t.me/{(await bot.me()).username}?start=ref_{m.from_user.id}"
-            await m.answer(f"👥 <b>Реферальная программа</b>\n\nПриглашайте друзей!\nВаша ссылка:\n<code>{link}</code>")
+            await m.answer(f"Ваша реферальная ссылка:\n{link}")
         elif action == "open_support":
-            await m.answer("🆘 Напишите ваш вопрос в поддержку:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]]))
+            await m.answer("Обратитесь в поддержку для решения вопросов.")
     except Exception as e:
         log.error("web_app_data error: %s", e)
-
-@router.callback_query(F.data.startswith("chk:"))
-async def check_payment(cb: CallbackQuery):
-    order_id = cb.data.split(":", 1)[1]
-    o = await q1("SELECT * FROM orders WHERE order_id=? AND user_id=?", order_id, cb.from_user.id)
-    if not o:
-        return await cb.answer("Заказ не найден", show_alert=True)
-    if o["status"] == "paid":
-        return await cb.answer("Уже оплачено ✅", show_alert=True)
-    try:
-        p = await rp("GET", f"/api/v1/payments/{o['payment_id']}")
-    except Exception:
-        return await cb.answer("Не удалось проверить, попробуйте позже", show_alert=True)
-    if p.get("status") == "paid":
-        await process_paid_order(order_id)
-        return await cb.answer("Оплата подтверждена! Ключ выслан.")
-    await cb.answer(f"Оплата ожидает подтверждения", show_alert=True)
 
 async def on_startup(bot: Bot):
     global http
